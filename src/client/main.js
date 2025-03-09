@@ -10,6 +10,7 @@ import PauseUI from "./ui/pause.js";
 import DebugUI from "./ui/debug.js";
 import HUD from "./ui/hud.js";
 import Effects from "./ui/effects.js";
+import Plankton from "./plankton.js";
 
 const client = new Client("ws://localhost:2567");
 let player,
@@ -22,7 +23,8 @@ let player,
   pauseUI,
   debugUI,
   hud,
-  effects;
+  effects,
+  plankton;
 let isClientPaused = false;
 let lastTime = performance.now();
 
@@ -68,6 +70,9 @@ client
     console.log("Water added to scene");
 
     player = new Player(room, room.sessionId);
+    player.init(seabed, decorations);
+
+    plankton = new Plankton(scene, player);
 
     const BASE_CAMERA_DISTANCE = 5;
     camera = new THREE.PerspectiveCamera(
@@ -79,7 +84,7 @@ client
     const updateCameraPosition = () => {
       if (player.object) {
         const scale = player.stats?.scale || 1.0;
-        const distance = BASE_CAMERA_DISTANCE / scale;
+        const distance = (BASE_CAMERA_DISTANCE / scale) * player.hitboxSize;
         const offset = new THREE.Vector3(
           0,
           1 * scale,
@@ -115,7 +120,7 @@ client
     });
     debugUI = new DebugUI(controls);
     hud = new HUD(player, controls);
-    effects = new Effects(controls, player); // Pass player
+    effects = new Effects(controls, player);
 
     document.body.addEventListener("click", () => {
       if (!isClientPaused) {
@@ -150,7 +155,12 @@ client
     room.onStateChange((state) => {
       if (!state.players[room.sessionId]) return;
       player.stats = { ...state.players[room.sessionId].stats };
-      player.tier = state.players[room.sessionId].tier;
+      const newTier = state.players[room.sessionId].tier;
+      if (player.tier !== newTier) {
+        player.tier = newTier;
+        player.loadModel();
+      }
+      player.hitboxSize = state.players[room.sessionId].stats.hitboxSize || 0.5;
       if (player.attachedTo !== state.players[room.sessionId].attachedTo) {
         player.attachedTo = state.players[room.sessionId].attachedTo;
         if (player.attachedTo) {
@@ -176,6 +186,7 @@ client
       decorations.update(delta);
       water.update(delta);
       effects.update(delta);
+      plankton.update(delta); // Update plankton
 
       if (!isClientPaused) {
         controls.update(delta);

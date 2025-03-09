@@ -10,14 +10,14 @@ export default class HUD {
       "20px",
       "#90EE90",
       "horizontal"
-    ); // Moved to right
+    );
     this.speedBar = this.createSpeedBar(
       "speed-bar",
       "calc(100% - 40px)",
       "50%",
       "20px",
       "200px",
-      "#FFD700",
+      "#FFFF00",
       "vertical"
     );
     this.xpBar = this.createBar(
@@ -35,10 +35,8 @@ export default class HUD {
     const container = document.createElement("div");
     container.id = id;
     container.style.position = "absolute";
-    container.style.left = left;
+    container.style.left = left; // Removed translateX(-50%)
     container.style.top = top;
-    container.style.transform =
-      orientation === "horizontal" ? "translateX(-50%)" : "translateY(-50%)";
     container.style.width = width;
     container.style.height = height;
     container.style.background = "rgba(255, 255, 255, 0.2)";
@@ -91,7 +89,7 @@ export default class HUD {
     outlineFill.style.borderRadius = "10px";
     outlineFill.style.boxSizing = "border-box";
     outlineFill.style.clipPath = "inset(0% 0% 100% 0%)";
-    outlineFill.style.background = "rgba(255, 255, 255, 0.3)";
+    outlineFill.style.background = "rgba(255, 255, 0, 0.3)";
     container.appendChild(outlineFill);
 
     const fill = document.createElement("div");
@@ -125,8 +123,8 @@ export default class HUD {
     }% 0% 0% 0%)`;
     this.speedBar.outlineFill.style.background =
       cooldownPercent >= 100
-        ? "rgba(255, 255, 255, 0.5)"
-        : "rgba(255, 255, 255, 0.3)";
+        ? "rgba(255, 255, 0, 0.5)"
+        : "rgba(255, 255, 0, 0.3)";
 
     const xp = this.player.stats?.xp || 0;
     this.xpBar.fill.style.width = `${xp}%`;
