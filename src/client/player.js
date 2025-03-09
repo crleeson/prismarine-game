@@ -19,6 +19,8 @@ export default class Player {
     this.decorations = null;
     this.fishData = null;
     this.controls = null;
+    this.plankton = null;
+    this.stateReady = false; // Add flag to track state readiness
     this.loadFishData().then(() => this.init());
   }
 
@@ -36,10 +38,12 @@ export default class Player {
     }
   }
 
-  init(seabed, decorations, controls) {
+  init(seabed, decorations, controls, plankton) {
+    // Add plankton parameter
     this.seabed = seabed;
     this.decorations = decorations;
     this.controls = controls;
+    this.plankton = plankton; // Store plankton
     this.loadModel();
   }
 
@@ -89,7 +93,16 @@ export default class Player {
           this.animations[clipName] = this.mixer.clipAction(clip);
           console.log(`Loaded animation: ${clipName}`);
         });
-        this.playAnimation("default");
+
+        // Check if "default" animation exists before playing
+        if (this.animations["default"]) {
+          this.playAnimation("default");
+        } else {
+          console.warn(
+            "Default animation not found in model. Available animations:",
+            Object.keys(this.animations)
+          );
+        }
 
         this.object.traverse((child) => {
           if (child.isMesh) {
@@ -187,16 +200,20 @@ export default class Player {
         });
       }
 
-      if (this.controls && this.controls.speed > 0) {
-        this.playAnimation("swim");
-      } else {
-        this.playAnimation("default");
+      if (this.mixer) {
+        if (this.controls && this.controls.speed > 0) {
+          this.playAnimation("swim");
+        } else {
+          this.playAnimation("default");
+        }
       }
 
       const biteBox = new THREE.Box3().setFromObject(this.biteHitbox);
-      this.checkCollision(biteBox, delta);
+      if (this.stateReady) {
+        // Only check collisions if state is ready
+        this.checkCollision(biteBox, delta);
+      }
 
-      // Constrain to chunk boundaries
       this.object.position.x = Math.max(
         -50,
         Math.min(50, this.object.position.x)
@@ -225,34 +242,36 @@ export default class Player {
 
   checkCollision(biteBox, delta) {
     // Check for plankton collision
-    if (this.player && this.player.plankton && this.player.plankton.plankton) {
-      this.player.plankton.plankton.forEach((plankton) => {
+    if (this.plankton && this.plankton.plankton) {
+      // Use this.plankton directly
+      this.plankton.plankton.forEach((plankton) => {
         const planktonBox = new THREE.Box3().setFromObject(plankton);
         if (biteBox.intersectsBox(planktonBox)) {
           console.log("Collision with plankton detected");
           const damage =
-            this.fishData.fishTiers[this.player.tier].defaultFish.stats.damage;
+            this.fishData.fishTiers[this.tier].defaultFish.stats.damage;
           plankton.userData.hp -= damage;
           if (plankton.userData.hp <= 0) {
-            this.player.plankton.scene.remove(plankton);
-            this.player.plankton.plankton =
-              this.player.plankton.plankton.filter((p) => p !== plankton);
-            this.player.stats.xp =
-              (this.player.stats.xp || 0) + plankton.userData.xp;
+            this.plankton.scene.remove(plankton);
+            this.plankton.plankton = this.plankton.plankton.filter(
+              (p) => p !== plankton
+            );
+            this.stats.xp = (this.stats.xp || 0) + plankton.userData.xp;
             this.playAnimation("eat");
             console.log(
-              `Plankton killed, XP gained: ${plankton.userData.xp}, Total XP: ${this.player.stats.xp}`
+              `Plankton killed, XP gained: ${plankton.userData.xp}, Total XP: ${this.stats.xp}`
             );
           }
         }
       });
     } else {
-      console.warn("Plankton or plankton.plankton is null/undefined");
+      console.warn(
+        "Plankton instance or plankton.plankton array is null/undefined"
+      );
     }
 
     // Check for other fish collision
     if (this.room.state && this.room.state.players) {
-      // Added null check for room.state
       Object.values(this.room.state.players).forEach((otherPlayer) => {
         if (
           otherPlayer.sessionId !== this.sessionId &&

@@ -46,12 +46,14 @@ client
 
     const scene = new THREE.Scene();
     const renderer = new THREE.WebGLRenderer();
+    const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setClearColor(0x000033, 1);
     document.body.appendChild(renderer.domElement);
     console.log("Renderer added");
 
     scene.fog = new THREE.FogExp2(0x000033, 0.03);
+    scene.add(ambientLight);
 
     seabed = new Seabed();
     seabed.addToScene(scene);
@@ -71,9 +73,9 @@ client
 
     player = new Player(room, room.sessionId);
     controls = new Controls(player, scene);
-    player.init(seabed, decorations, controls);
+    plankton = new Plankton(scene, player, seabed);
+    player.init(seabed, decorations, controls, plankton); // Pass plankton
     player.controls = controls;
-    plankton = new Plankton(scene, player, seabed); // Pass seabed
 
     const BASE_CAMERA_DISTANCE = 5;
     camera = new THREE.PerspectiveCamera(
@@ -92,6 +94,13 @@ client
           -distance
         ).applyQuaternion(player.object.quaternion);
         camera.position.copy(player.object.position).add(offset);
+
+        // Add a slight downward pitch (e.g., -15 degrees or -0.26 radians)
+        camera.rotation.order = "YXZ"; // Ensure consistent rotation order
+        camera.rotation.y = player.object.rotation.y; // Match yaw with player
+        camera.rotation.x = -0.26; // Downward pitch (adjust as needed, e.g., -0.2 to -0.3)
+        camera.rotation.z = 0;
+
         camera.lookAt(player.object.position);
 
         const waterHeight = water.getHeight();
@@ -168,6 +177,7 @@ client
           player.object.position.set(parent.x, parent.y, parent.z + 1);
         }
       }
+      player.stateReady = true; // Set flag when state is ready
       updateCameraPosition();
     });
 
