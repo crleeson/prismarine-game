@@ -1,0 +1,30 @@
+# Node.js
+node_modules/
+dist/
+build/
+
+# Logs and databases
+*.log
+*.sql
+*.sqlite
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE and editor files
+.vscode/
+.idea/
+*.sublime-workspace
+
+# Build artifacts
+*.glb  # If you want to exclude models (optional, keep if tracked)
+*.json # If you want to exclude JSON files (optional, keep fishData.json)
+
+# Models
+public
