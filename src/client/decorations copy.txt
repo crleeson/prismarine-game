@@ -21,11 +21,8 @@ export default class Decorations {
       const geometry = new THREE.DodecahedronGeometry(size, 0);
       const material = new THREE.MeshBasicMaterial({ color: 0x808080 });
       const rock = new THREE.Mesh(geometry, material);
-      let x = (Math.random() - 0.5) * CHUNK_WIDTH * 0.8;
-      let z = (Math.random() - 0.5) * CHUNK_DEPTH * 0.8;
-      // Clamp to chunk boundaries
-      x = Math.max(-50, Math.min(50, x));
-      z = Math.max(-50, Math.min(50, z));
+      const x = (Math.random() - 0.5) * CHUNK_WIDTH * 0.8;
+      const z = (Math.random() - 0.5) * CHUNK_DEPTH * 0.8;
       rock.position.set(x, -5 - size / 2, z);
       this.rocks.push(rock);
       largeRockPositions.push({ x, z });
@@ -41,14 +38,13 @@ export default class Decorations {
         largeRockPositions[
           Math.floor(Math.random() * largeRockPositions.length)
         ];
-      let offsetX = (Math.random() - 0.5) * 5;
-      let offsetZ = (Math.random() - 0.5) * 5;
-      let x = nearRock.x + offsetX;
-      let z = nearRock.z + offsetZ;
-      // Clamp to chunk boundaries
-      x = Math.max(-50, Math.min(50, x));
-      z = Math.max(-50, Math.min(50, z));
-      rock.position.set(x, -5 - size / 2, z);
+      const offsetX = (Math.random() - 0.5) * 5;
+      const offsetZ = (Math.random() - 0.5) * 5;
+      rock.position.set(
+        nearRock.x + offsetX,
+        -5 - size / 2,
+        nearRock.z + offsetZ
+      );
       this.rocks.push(rock);
     }
   }
@@ -70,7 +66,7 @@ export default class Decorations {
           const material = new THREE.MeshStandardMaterial({
             color: coralColor,
             emissive: coralColor,
-            emissiveIntensity: 0.5,
+            emissiveIntensity: 0.5, // Subtle glow
           });
           coral = new THREE.Mesh(geometry, material);
           coral.position.set(
@@ -116,56 +112,28 @@ export default class Decorations {
         coral.userData.color = coral.material.color;
         group.add(coral);
       }
-      let x = (Math.random() - 0.5) * CHUNK_WIDTH * 0.7;
-      let z = (Math.random() - 0.5) * CHUNK_DEPTH * 0.7;
-      // Clamp to chunk boundaries
-      x = Math.max(-50, Math.min(50, x));
-      z = Math.max(-50, Math.min(50, z));
-      group.position.set(x, 0, z);
+      group.position.set(
+        (Math.random() - 0.5) * CHUNK_WIDTH * 0.7,
+        0,
+        (Math.random() - 0.5) * CHUNK_DEPTH * 0.7
+      );
       this.bunches.push(group);
     }
   }
 
   update(delta) {
     this.bunches.forEach((group) => {
-      // Clamp group position
-      group.position.x = Math.max(-50, Math.min(50, group.position.x));
-      group.position.y = Math.max(0, Math.min(100, group.position.y));
-      group.position.z = Math.max(-50, Math.min(50, group.position.z));
-
       group.children.forEach((coral) => {
         coral.rotation.z =
           Math.sin(Date.now() * 0.001 + coral.position.x) * 0.1; // Subtle swaying
-        // Clamp coral local position relative to group
-        const worldPos = coral.getWorldPosition(new THREE.Vector3());
-        const groupPos = group.position.clone();
-        if (
-          worldPos.x < -50 ||
-          worldPos.x > 50 ||
-          worldPos.z < -50 ||
-          worldPos.z > 50 ||
-          worldPos.y < 0 ||
-          worldPos.y > 100
-        ) {
-          coral.position.x = Math.max(-5, Math.min(5, coral.position.x));
-          coral.position.z = Math.max(-5, Math.min(5, coral.position.z));
-          coral.position.y = Math.max(-5, Math.min(5, coral.position.y));
-        }
       });
-    });
-
-    // Clamp rock positions (in case they move, though they currently don’t)
-    this.rocks.forEach((rock) => {
-      rock.position.x = Math.max(-50, Math.min(50, rock.position.x));
-      rock.position.y = Math.max(-5, Math.min(100, rock.position.y));
-      rock.position.z = Math.max(-50, Math.min(50, rock.position.z));
     });
   }
 
   addToScene(scene) {
     this.rocks.forEach((rock) => scene.add(rock));
     this.bunches.forEach((bunch) => scene.add(bunch));
-    const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+    const ambientLight = new THREE.AmbientLight(0x404040, 0.5); // Soft ambient light
     scene.add(ambientLight);
   }
 

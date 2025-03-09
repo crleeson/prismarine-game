@@ -18,29 +18,36 @@ export default class Player {
     this.seabed = null;
     this.decorations = null;
     this.fishData = null;
+    this.controls = null;
     this.loadFishData().then(() => this.init());
   }
 
   async loadFishData() {
     try {
       const response = await fetch("/fishData.json");
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
       this.fishData = await response.json();
-      console.log("Loaded fishData for player:", this.fishData);
+      console.log("Successfully loaded fishData:", this.fishData);
     } catch (error) {
-      console.error("Error loading fishData.json:", error);
+      console.error("Failed to load fishData.json:", error);
+      this.fishData = null;
     }
   }
 
-  init(seabed, decorations) {
+  init(seabed, decorations, controls) {
     this.seabed = seabed;
     this.decorations = decorations;
+    this.controls = controls;
     this.loadModel();
   }
 
   loadModel() {
     if (!this.fishData) {
-      console.warn("fishData not loaded yet, delaying model load");
-      setTimeout(() => this.loadModel(), 100);
+      console.error(
+        "fishData failed to load, cannot load model. Check if /fishData.json is accessible."
+      );
       return;
     }
 
@@ -55,6 +62,7 @@ export default class Player {
     const fish = tierData.defaultFish;
     this.hitboxSize = fish.stats.hitboxSize;
     const modelPath = `/models/${fish.model}`;
+    console.log("Attempting to load model from:", modelPath);
 
     const loader = new GLTFLoader();
     loader.load(
@@ -77,7 +85,9 @@ export default class Player {
 
         this.mixer = new THREE.AnimationMixer(this.object);
         gltf.animations.forEach((clip) => {
-          this.animations[clip.name] = this.mixer.clipAction(clip);
+          const clipName = clip.name;
+          this.animations[clipName] = this.mixer.clipAction(clip);
+          console.log(`Loaded animation: ${clipName}`);
         });
         this.playAnimation("default");
 
@@ -117,7 +127,9 @@ export default class Player {
         );
         this.object.add(this.biteHitbox);
 
-        console.log(`Loaded ${fish.name} model for tier ${this.tier}`);
+        console.log(
+          `Successfully loaded ${fish.name} model for tier ${this.tier}`
+        );
       },
       (progress) => {
         console.log(
@@ -135,11 +147,17 @@ export default class Player {
     if (this.mixer && this.animations[name]) {
       Object.values(this.animations).forEach((anim) => anim.stop());
       this.animations[name].play();
+      console.log(`Playing animation: ${name}`);
+    } else {
+      console.warn(`Animation ${name} not found or mixer not initialized`);
     }
   }
 
   update(delta) {
-    if (!this.object) return;
+    if (!this.object) {
+      console.warn("Player object not loaded, skipping update");
+      return;
+    }
 
     if (this.mixer) this.mixer.update(delta);
 
@@ -169,22 +187,88 @@ export default class Player {
         });
       }
 
-      this.room.send("move", {
-        x: this.object.position.x,
-        y: this.object.position.y,
-        z: this.object.position.z,
-        rotation: {
-          x: this.object.rotation.x,
-          y: this.object.rotation.y,
-          z: this.object.rotation.z,
-        },
-      });
+      if (this.controls && this.controls.speed > 0) {
+        this.playAnimation("swim");
+      } else {
+        this.playAnimation("default");
+      }
+
+      const biteBox = new THREE.Box3().setFromObject(this.biteHitbox);
+      this.checkCollision(biteBox, delta);
+
+      // Constrain to chunk boundaries
+      this.object.position.x = Math.max(
+        -50,
+        Math.min(50, this.object.position.x)
+      );
+      this.object.position.y = Math.max(
+        0,
+        Math.min(100, this.object.position.y)
+      );
+      this.object.position.z = Math.max(
+        -50,
+        Math.min(50, this.object.position.z)
+      );
     }
 
-    if (this.controls && this.controls.speed > 0) {
-      this.playAnimation("swim");
+    this.room.send("move", {
+      x: this.object.position.x,
+      y: this.object.position.y,
+      z: this.object.position.z,
+      rotation: {
+        x: this.object.rotation.x,
+        y: this.object.rotation.y,
+        z: this.object.rotation.z,
+      },
+    });
+  }
+
+  checkCollision(biteBox, delta) {
+    // Check for plankton collision
+    if (this.player && this.player.plankton && this.player.plankton.plankton) {
+      this.player.plankton.plankton.forEach((plankton) => {
+        const planktonBox = new THREE.Box3().setFromObject(plankton);
+        if (biteBox.intersectsBox(planktonBox)) {
+          console.log("Collision with plankton detected");
+          const damage =
+            this.fishData.fishTiers[this.player.tier].defaultFish.stats.damage;
+          plankton.userData.hp -= damage;
+          if (plankton.userData.hp <= 0) {
+            this.player.plankton.scene.remove(plankton);
+            this.player.plankton.plankton =
+              this.player.plankton.plankton.filter((p) => p !== plankton);
+            this.player.stats.xp =
+              (this.player.stats.xp || 0) + plankton.userData.xp;
+            this.playAnimation("eat");
+            console.log(
+              `Plankton killed, XP gained: ${plankton.userData.xp}, Total XP: ${this.player.stats.xp}`
+            );
+          }
+        }
+      });
     } else {
-      this.playAnimation("default");
+      console.warn("Plankton or plankton.plankton is null/undefined");
+    }
+
+    // Check for other fish collision
+    if (this.room.state && this.room.state.players) {
+      // Added null check for room.state
+      Object.values(this.room.state.players).forEach((otherPlayer) => {
+        if (
+          otherPlayer.sessionId !== this.sessionId &&
+          otherPlayer.biteHitbox
+        ) {
+          const otherBiteBox = new THREE.Box3().setFromObject(
+            otherPlayer.biteHitbox
+          );
+          if (biteBox.intersectsBox(otherBiteBox)) {
+            this.playAnimation("eat");
+            console.log("Collision with other fish detected");
+          }
+        }
+      });
+    } else {
+      console.warn("room.state or room.state.players is null/undefined");
     }
   }
 }

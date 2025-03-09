@@ -4,7 +4,7 @@ export default class HUD {
     this.controls = controls;
     this.healthBar = this.createBar(
       "health-bar",
-      "calc(100% - 220px)",
+      "20px",
       "20px",
       "200px",
       "20px",
@@ -24,8 +24,8 @@ export default class HUD {
       "xp-bar",
       "50%",
       "calc(100% - 50px)",
-      "200px",
-      "20px",
+      "300px",
+      "15px",
       "#4682B4",
       "horizontal"
     );
@@ -35,8 +35,12 @@ export default class HUD {
     const container = document.createElement("div");
     container.id = id;
     container.style.position = "absolute";
-    container.style.left = left; // Removed translateX(-50%)
+    container.style.left = left;
     container.style.top = top;
+    // Only apply transform for xp-bar to center it horizontally
+    if (id === "xp-bar") {
+      container.style.transform = "translateX(-50%)";
+    }
     container.style.width = width;
     container.style.height = height;
     container.style.background = "rgba(255, 255, 255, 0.2)";

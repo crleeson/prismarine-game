@@ -70,9 +70,10 @@ client
     console.log("Water added to scene");
 
     player = new Player(room, room.sessionId);
-    player.init(seabed, decorations);
-
-    plankton = new Plankton(scene, player);
+    controls = new Controls(player, scene);
+    player.init(seabed, decorations, controls);
+    player.controls = controls;
+    plankton = new Plankton(scene, player, seabed); // Pass seabed
 
     const BASE_CAMERA_DISTANCE = 5;
     camera = new THREE.PerspectiveCamera(
@@ -112,7 +113,6 @@ client
       }
     };
 
-    controls = new Controls(player, scene);
     pauseUI = new PauseUI(() => {
       isClientPaused = false;
       pauseUI.hide();
@@ -179,6 +179,7 @@ client
 
       if (player.object && !scene.children.includes(player.object)) {
         scene.add(player.object);
+        console.log("Player object added to scene");
       }
 
       player.update(delta);
@@ -186,7 +187,7 @@ client
       decorations.update(delta);
       water.update(delta);
       effects.update(delta);
-      plankton.update(delta); // Update plankton
+      plankton.update(delta);
 
       if (!isClientPaused) {
         controls.update(delta);
