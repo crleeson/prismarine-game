@@ -17,10 +17,11 @@ export default class Controls {
     this.mouseDelta = new THREE.Vector2();
     this.isDashing = false;
     this.dashCooldown = 0;
-    this.dashDuration = 0; // New: Tracks dash duration
+    this.dashDuration = 0; // Tracks dash duration
     this.dashSpeed = this.maxSpeed * 2; // Burst speed
     this.yaw = 0;
     this.pitch = 0;
+    this.isAttacking = false; // For attack state
     this.init();
   }
 
@@ -50,8 +51,23 @@ export default class Controls {
       }
     });
 
+    document.addEventListener("mousedown", (e) => {
+      if (e.button === 0 && document.pointerLockElement) {
+        // Left click
+        this.isAttacking = true;
+      }
+    });
+
+    document.addEventListener("mouseup", (e) => {
+      if (e.button === 0) {
+        this.isAttacking = false;
+      }
+    });
+
     document.addEventListener("click", () => {
-      if (document.pointerLockElement) this.keys.space = true;
+      if (document.pointerLockElement && this.dashCooldown <= 0) {
+        this.keys.space = true; // Trigger dash on click
+      }
     });
   }
 
@@ -69,7 +85,7 @@ export default class Controls {
       this.speed = Math.max(this.speed - delta * 5, 0);
     }
 
-    // Dash logic rewrite
+    // Dash logic
     if (this.keys.space && !this.isDashing && this.dashCooldown <= 0) {
       this.isDashing = true;
       this.dashDuration = 0.5; // Dash lasts 0.5s
@@ -87,11 +103,6 @@ export default class Controls {
 
     this.dashCooldown = Math.max(0, this.dashCooldown - delta);
 
-    // Strafe (A/D)
-    const strafe = new THREE.Vector3();
-    if (this.keys.a) strafe.x += this.strafeSpeed * delta;
-    if (this.keys.d) strafe.x -= this.strafeSpeed * delta;
-
     // Steering with mouse (rotation via quaternion)
     const sensitivity = 0.001;
     this.yaw -= this.mouseDelta.x * sensitivity;
@@ -105,20 +116,23 @@ export default class Controls {
     this.player.object.quaternion.copy(quaternion);
 
     // Move player based on facing direction
-    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
       this.player.object.quaternion
     );
     this.player.object.position.add(forward.multiplyScalar(this.speed * delta));
-    this.player.object.position.add(strafe);
 
-    // Reset mouse delta
+    // Disable A/D movement by ignoring strafe
     this.mouseDelta.set(0, 0);
+
+    // Pass isAttacking to player via update (avoid direct property access)
+    this.player.update(delta, { isAttacking: this.isAttacking });
   }
 
   getDebugInfo() {
     return {
       speed: this.speed.toFixed(2),
       dashCooldown: this.dashCooldown.toFixed(2),
+      isAttacking: this.isAttacking,
       isDashing: this.isDashing,
     };
   }

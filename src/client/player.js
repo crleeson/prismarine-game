@@ -6,12 +6,14 @@ export default class Player {
     this.room = room;
     this.sessionId = sessionId;
     this.stats = {};
-    this.tier = 0;
+    this.tier = 0; // Will update to 1 for Clownfish later
     this.attachedTo = null;
     this.object = null;
     this.currentModel = null;
     this.animations = {};
     this.mixer = null;
+    this.defaultAction = null;
+    this.swimAction = null;
     this.hitboxSize = 0.5;
     this.biteHitbox = null;
     this.bodyHitbox = null;
@@ -20,13 +22,13 @@ export default class Player {
     this.fishData = null;
     this.controls = null;
     this.plankton = null;
-    this.stateReady = false; // Add flag to track state readiness
+    this.stateReady = false;
     this.loadFishData().then(() => this.init());
   }
 
   async loadFishData() {
     try {
-      const response = await fetch("/fishData.json");
+      const response = await fetch("/public/fishData.json"); // Updated path
       if (!response.ok) {
         throw new Error(`HTTP error! Status: ${response.status}`);
       }
@@ -39,18 +41,17 @@ export default class Player {
   }
 
   init(seabed, decorations, controls, plankton) {
-    // Add plankton parameter
     this.seabed = seabed;
     this.decorations = decorations;
-    this.controls = controls;
-    this.plankton = plankton; // Store plankton
+    this.controls = controls; // Set controls here
+    this.plankton = plankton;
     this.loadModel();
   }
 
   loadModel() {
     if (!this.fishData) {
       console.error(
-        "fishData failed to load, cannot load model. Check if /fishData.json is accessible."
+        "fishData failed to load, cannot load model. Check if /public/fishData.json is accessible."
       );
       return;
     }
@@ -94,23 +95,56 @@ export default class Player {
           console.log(`Loaded animation: ${clipName}`);
         });
 
-        // Check if "default" animation exists before playing
-        if (this.animations["default"]) {
-          this.playAnimation("default");
+        const swimAnimNameBase = `${fish.name}_Swim`;
+        let swimAnimName = null;
+        const defaultAnimName = `${fish.name}_Default`;
+
+        // Find the swim animation (strip the frame part)
+        for (const animName of Object.keys(this.animations)) {
+          if (animName.startsWith(swimAnimNameBase)) {
+            swimAnimName = animName;
+            break;
+          }
+        }
+
+        // Set default animation as fallback
+        if (this.animations[defaultAnimName]) {
+          this.defaultAction = this.animations[defaultAnimName];
+          this.defaultAction.setLoop(THREE.LoopRepeat);
+          console.log(`Loaded default animation: ${defaultAnimName}`);
         } else {
           console.warn(
-            "Default animation not found in model. Available animations:",
+            `Default animation ${defaultAnimName} not found. Available animations:`,
             Object.keys(this.animations)
           );
         }
 
+        // Set swim animation to loop
+        if (swimAnimName && this.animations[swimAnimName]) {
+          this.swimAction = this.animations[swimAnimName];
+          this.swimAction.setLoop(THREE.LoopRepeat);
+          this.swimAction.play();
+          console.log(`Started looping swim animation: ${swimAnimName}`);
+        } else {
+          console.warn(
+            `Swim animation ${swimAnimNameBase} not found. Falling back to default.`
+          );
+          if (this.defaultAction) {
+            this.defaultAction.play();
+            console.log(
+              `Started looping default animation: ${defaultAnimName}`
+            );
+          }
+        }
+
         this.object.traverse((child) => {
           if (child.isMesh) {
-            child.material = new THREE.MeshStandardMaterial({
-              color: 0xffffff,
-              emissive: 0x000000,
-              metalness: 0.1,
-              roughness: 0.5,
+            const originalMaterial = child.material;
+            const map = originalMaterial.map || null;
+            child.material = new THREE.MeshBasicMaterial({
+              map: map,
+              color: originalMaterial.color || 0xffffff,
+              vertexColors: originalMaterial.vertexColors || false,
             });
           }
         });
@@ -126,18 +160,15 @@ export default class Player {
         this.bodyHitbox.position.set(0, 0, 0);
         this.object.add(this.bodyHitbox);
 
+        // Extend bite hitbox to match body hitbox height and width
         const biteWidth = this.hitboxSize;
-        const biteHeight = this.hitboxSize / 5;
-        const biteDepth = this.hitboxSize * 0.2;
+        const biteHeight = this.hitboxSize; // Same height as body hitbox
+        const biteDepth = this.hitboxSize * 0.2; // Small depth (layer in front)
         this.biteHitbox = new THREE.Mesh(
           new THREE.BoxGeometry(biteWidth, biteHeight, biteDepth),
           new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true })
         );
-        this.biteHitbox.position.set(
-          0,
-          -this.hitboxSize / 2 + biteHeight / 2,
-          this.hitboxSize / 2 + biteDepth / 2
-        );
+        this.biteHitbox.position.set(0, 0, this.hitboxSize / 2 + biteDepth / 2); // Position at the front
         this.object.add(this.biteHitbox);
 
         console.log(
@@ -157,22 +188,72 @@ export default class Player {
   }
 
   playAnimation(name) {
-    if (this.mixer && this.animations[name]) {
-      Object.values(this.animations).forEach((anim) => anim.stop());
+    if (!this.mixer) {
+      console.warn("Mixer not initialized, skipping animation");
+      return;
+    }
+
+    const currentFish = this.fishData.fishTiers.find(
+      (tier) => tier.tier === this.tier
+    ).defaultFish;
+    const defaultAnimName = `${currentFish.name}_Default`;
+    const eatAnimName = `${currentFish.name}_Eat`;
+
+    // Stop the swim or default animation if playing
+    if (this.swimAction && this.swimAction.isRunning()) {
+      this.swimAction.stop();
+    } else if (this.defaultAction && this.defaultAction.isRunning()) {
+      this.defaultAction.stop();
+    }
+
+    // Play the requested animation if it exists
+    if (name === "eat" && this.animations[eatAnimName]) {
+      this.animations[eatAnimName].setLoop(THREE.LoopOnce, 1);
+      this.animations[eatAnimName].play();
+      console.log(
+        `Playing animation: ${eatAnimName}, will resume swim/default after`
+      );
+
+      this.animations[eatAnimName].clampWhenFinished = true;
+      this.animations[eatAnimName].addEventListener("finished", () => {
+        if (this.swimAction) {
+          this.swimAction.play();
+          console.log(`Resumed looping swim animation`);
+        } else if (this.defaultAction) {
+          this.defaultAction.play();
+          console.log(`Resumed looping default animation: ${defaultAnimName}`);
+        }
+      });
+    } else if (this.animations[name]) {
       this.animations[name].play();
       console.log(`Playing animation: ${name}`);
     } else {
-      console.warn(`Animation ${name} not found or mixer not initialized`);
+      console.warn(
+        `Animation ${name} not found. Resuming swim/default. Available animations:`,
+        Object.keys(this.animations)
+      );
+      if (this.swimAction) {
+        this.swimAction.play();
+        console.log(`Resumed looping swim animation`);
+      } else if (this.defaultAction) {
+        this.defaultAction.play();
+        console.log(`Resumed looping default animation: ${defaultAnimName}`);
+      }
     }
   }
 
-  update(delta) {
+  update(delta, options = {}) {
+    const { isAttacking = false } = options; // Default to false if not provided
+
     if (!this.object) {
       console.warn("Player object not loaded, skipping update");
       return;
     }
 
-    if (this.mixer) this.mixer.update(delta);
+    if (this.mixer) {
+      this.mixer.update(delta);
+      console.log("Mixer updated with delta:", delta);
+    }
 
     if (!this.attachedTo) {
       const seabedHeight = this.seabed
@@ -201,16 +282,15 @@ export default class Player {
       }
 
       if (this.mixer) {
-        if (this.controls && this.controls.speed > 0) {
-          this.playAnimation("swim");
-        } else {
-          this.playAnimation("default");
+        if (isAttacking) {
+          // Use the passed isAttacking
+          this.playAnimation("eat");
         }
+        // Swim animation already loops, no need to call unless interrupted
       }
 
       const biteBox = new THREE.Box3().setFromObject(this.biteHitbox);
       if (this.stateReady) {
-        // Only check collisions if state is ready
         this.checkCollision(biteBox, delta);
       }
 
@@ -241,9 +321,7 @@ export default class Player {
   }
 
   checkCollision(biteBox, delta) {
-    // Check for plankton collision
     if (this.plankton && this.plankton.plankton) {
-      // Use this.plankton directly
       this.plankton.plankton.forEach((plankton) => {
         const planktonBox = new THREE.Box3().setFromObject(plankton);
         if (biteBox.intersectsBox(planktonBox)) {
@@ -270,7 +348,6 @@ export default class Player {
       );
     }
 
-    // Check for other fish collision
     if (this.room.state && this.room.state.players) {
       Object.values(this.room.state.players).forEach((otherPlayer) => {
         if (
@@ -289,5 +366,9 @@ export default class Player {
     } else {
       console.warn("room.state or room.state.players is null/undefined");
     }
+  }
+
+  addToScene(scene) {
+    scene.add(this.object);
   }
 }

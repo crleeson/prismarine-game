@@ -24,11 +24,11 @@ export default class Seabed {
     const colors = new Float32Array(vertices.length);
     for (let i = 0; i < vertices.length; i += 3) {
       const x = vertices[i];
-      const z = vertices[i + 2]; // Z is the depth axis after rotation
-      const height = noise2D(x * 0.02, z * 0.02) * 5;
-      vertices[i + 1] = height; // Y is the height axis
+      const y = vertices[i + 1];
+      const height = noise2D(x * 0.02, y * 0.02) * 5;
+      vertices[i + 2] = height;
 
-      const colorNoise = noise2D(x * 0.03, z * 0.03) * 0.1;
+      const colorNoise = noise2D(x * 0.03, y * 0.03) * 0.1;
       const baseColor = new THREE.Color(0xe8cda2);
       const r = Math.min(1, Math.max(0, baseColor.r + colorNoise));
       const g = Math.min(1, Math.max(0, baseColor.g + colorNoise));
@@ -47,7 +47,7 @@ export default class Seabed {
     });
 
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.rotation.x = -Math.PI / 2; // Lie flat
+    mesh.rotation.x = -Math.PI / 2;
     mesh.position.set(0, -5, 0);
 
     return mesh;
@@ -55,11 +55,6 @@ export default class Seabed {
 
   addToScene(scene) {
     scene.add(this.mesh);
-    console.log("Seabed added to scene at position:", this.mesh.position);
-  }
-
-  removeFromScene(scene) {
-    scene.remove(this.mesh);
   }
 
   getHeightAt(x, z) {

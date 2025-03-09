@@ -36,8 +36,27 @@ style.innerHTML = `
     margin: 0;
     overflow: hidden;
   }
+  #crosshair {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 8px;
+    height: 8px;
+    background-color: white;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    display: none; // Hidden by default
+  }
 `;
 document.head.appendChild(style);
+
+const crosshair = document.createElement("div");
+crosshair.id = "crosshair";
+document.body.appendChild(crosshair);
+
+// Add debug mode flag
+let debugMode = false;
 
 client
   .joinOrCreate("gameRoom")
@@ -72,10 +91,10 @@ client
     console.log("Water added to scene");
 
     player = new Player(room, room.sessionId);
-    controls = new Controls(player, scene);
+    controls = new Controls(player, scene); // Create controls first
     plankton = new Plankton(scene, player, seabed);
-    player.init(seabed, decorations, controls, plankton); // Pass plankton
-    player.controls = controls;
+    player.init(seabed, decorations, controls, plankton); // Pass controls to init
+    player.controls = controls; // Ensure controls is set
 
     const BASE_CAMERA_DISTANCE = 5;
     camera = new THREE.PerspectiveCamera(
@@ -88,20 +107,33 @@ client
       if (player.object) {
         const scale = player.stats?.scale || 1.0;
         const distance = (BASE_CAMERA_DISTANCE / scale) * player.hitboxSize;
-        const offset = new THREE.Vector3(
-          0,
-          1 * scale,
-          -distance
-        ).applyQuaternion(player.object.quaternion);
-        camera.position.copy(player.object.position).add(offset);
+        const targetOffset = new THREE.Vector3(0, 0.5 * scale, -distance);
+        const currentOffset = camera.position
+          .clone()
+          .sub(player.object.position)
+          .applyQuaternion(
+            player.object.getWorldQuaternion(new THREE.Quaternion())
+          );
 
-        // Add a slight downward pitch (e.g., -15 degrees or -0.26 radians)
-        camera.rotation.order = "YXZ"; // Ensure consistent rotation order
-        camera.rotation.y = player.object.rotation.y; // Match yaw with player
-        camera.rotation.x = -0.26; // Downward pitch (adjust as needed, e.g., -0.2 to -0.3)
+        const smoothedOffset = currentOffset.clone().lerp(targetOffset, 0.1);
+        camera.position.copy(player.object.position).add(smoothedOffset);
+
+        // Look slightly ahead of the fish
+        const lookAheadDistance = distance * 0.5; // Look 50% of the camera distance ahead
+        const lookAtTarget = player.object.position
+          .clone()
+          .add(
+            new THREE.Vector3(0, 0, -lookAheadDistance).applyQuaternion(
+              player.object.quaternion
+            )
+          ); // Negative Z for forward
+
+        camera.rotation.order = "YXZ";
+        camera.rotation.y = player.object.rotation.y;
+        camera.rotation.x = -0.35;
         camera.rotation.z = 0;
 
-        camera.lookAt(player.object.position);
+        camera.lookAt(lookAtTarget); // Look slightly ahead
 
         const waterHeight = water.getHeight();
         const isUnderwater = camera.position.y < waterHeight;
@@ -132,6 +164,9 @@ client
     effects = new Effects(controls, player);
 
     document.body.addEventListener("click", () => {
+      if (!isClientPaused && controls.dashCooldown <= 0) {
+        effects.onDash();
+      }
       if (!isClientPaused) {
         document.body.requestPointerLock();
       }
@@ -150,7 +185,14 @@ client
         }
       }
       if (e.ctrlKey && e.key === "f") {
-        debugUI.toggle();
+        debugMode = !debugMode;
+        console.log(`Debug mode ${debugMode ? "enabled" : "disabled"}`);
+        crosshair.style.display = debugMode ? "block" : "none";
+      }
+      // Disable A and D keys (no functionality for now)
+      if (e.key === "a" || e.key === "d") {
+        e.preventDefault();
+        console.log("A/D keys disabled");
       }
     });
 
