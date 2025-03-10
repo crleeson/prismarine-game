@@ -68,6 +68,20 @@ class GameRoom extends Room {
     });
 
     this.setSimulationInterval((delta) => this.update(delta / 1000));
+
+    this.onMessage("startDash", (client) => {
+      const player = this.state.players[client.sessionId];
+      if (player) {
+        player.isDashing = true;
+      }
+    });
+
+    this.onMessage("endDash", (client) => {
+      const player = this.state.players[client.sessionId];
+      if (player) {
+        player.isDashing = false;
+      }
+    });
   }
 
   onJoin(client) {
@@ -97,17 +111,24 @@ class GameRoom extends Room {
           player.stats.energy
         )
       );
-      if (player.stats.energy < 20 && player.tier !== 0) {
-        player.stats.xp -=
-          player.stats.decayRate * (20 - player.stats.energy) * delta;
-      }
-      if (player.tier === 0 && player.attachedTo) {
-        const parent = this.state.players[player.attachedTo];
-        if (parent) {
-          const sappedXp = parent.stats.xp * player.stats.xpSapRate * delta;
-          player.stats.xp += sappedXp;
-          parent.stats.xp -= sappedXp;
-        }
+
+      const decayRate = player.isDashing
+        ? player.stats.xpDecayRate * 2
+        : player.stats.xpDecayRate;
+      player.stats.xp = Math.max(0, player.stats.xp - decayRate * delta);
+      if (player.stats.xp <= 0 && player.tier > 1) {
+        const previousTier = player.tier - 1;
+        const previousFish = fishData.fishTiers.find(
+          (t) => t.tier === previousTier
+        ).defaultFish;
+        player.tier = previousTier;
+        player.stats.xp = previousFish.stats.xpThreshold * 0.8;
+        player.stats = { ...previousFish.stats, xp: player.stats.xp };
+        this.broadcast("tierDowngrade", {
+          id: player.id,
+          tier: player.tier,
+          xp: player.stats.xp,
+        });
       }
     });
   }

@@ -28,7 +28,10 @@ export default class PauseUI {
     resumeButton.style.padding = "10px 20px";
     resumeButton.style.margin = "10px";
     resumeButton.style.fontSize = "16px";
-    resumeButton.addEventListener("click", () => this.onResume());
+    resumeButton.addEventListener("click", () => {
+      this.onResume(); // Trigger callback
+      this.hide(); // Ensure hide is called immediately
+    });
     container.appendChild(resumeButton);
 
     document.body.appendChild(container);

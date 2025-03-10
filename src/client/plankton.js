@@ -21,6 +21,8 @@ export default class Plankton {
     this.density = 0.00005;
     this.sizeRange = [0.1, 0.3];
     this.xpRange = [5, 15];
+    this.dashDistanceRange = [0.5, 2.0];
+    this.dashIntervalRange = [2, 5];
     this.loadFishData().then(() => this.init());
   }
 
@@ -38,6 +40,14 @@ export default class Plankton {
     } catch (error) {
       console.error("Error loading fishData.json:", error);
     }
+
+    this.dashDistanceRange = this.fishData.plankton.base.dashDistanceRange;
+    this.dashIntervalRange = this.fishData.plankton.base.dashIntervalRange;
+    console.log(
+      "Plankton dash settings loaded:",
+      this.dashDistanceRange,
+      this.dashIntervalRange
+    );
   }
 
   init() {
@@ -74,7 +84,10 @@ export default class Plankton {
       );
       plankton.userData = { hp: 1, xp: xp, size: scale };
       plankton.rotationSpeed = Math.random() * 0.1;
-      plankton.moveTimer = Math.random() * 5;
+      plankton.moveTimer =
+        Math.random() *
+          (this.dashIntervalRange[1] - this.dashIntervalRange[0]) +
+        this.dashIntervalRange[0];
       plankton.isMoving = false;
       this.scene.add(plankton);
       this.plankton.push(plankton);
@@ -95,13 +108,17 @@ export default class Plankton {
       plankton.moveTimer -= delta;
       if (plankton.moveTimer <= 0 && !plankton.isMoving) {
         plankton.isMoving = true;
-        plankton.moveTimer = 1;
+        plankton.moveTimer = 1; // Duration of dash
+        const dashDistance =
+          Math.random() *
+            (this.dashDistanceRange[1] - this.dashDistanceRange[0]) +
+          this.dashDistanceRange[0];
         const direction = new THREE.Vector3(
           Math.random() - 0.5,
           Math.random() - 0.5,
           Math.random() - 0.5
         ).normalize();
-        plankton.userData.velocity = direction.multiplyScalar(0.5);
+        plankton.userData.velocity = direction.multiplyScalar(dashDistance);
       }
       if (plankton.isMoving) {
         const newPosition = plankton.position
@@ -136,7 +153,10 @@ export default class Plankton {
         plankton.moveTimer -= delta;
         if (plankton.moveTimer <= 0) {
           plankton.isMoving = false;
-          plankton.moveTimer = Math.random() * 5 + 2;
+          plankton.moveTimer =
+            Math.random() *
+              (this.dashIntervalRange[1] - this.dashIntervalRange[0]) +
+            this.dashIntervalRange[0];
           delete plankton.userData.velocity;
         }
       }

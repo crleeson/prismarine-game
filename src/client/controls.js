@@ -9,15 +9,17 @@ import {
   SPEED_DECELERATION,
   SPEED_IDLE_DECELERATION,
   MOUSE_SENSITIVITY,
+  DASH_XP_THRESHOLD,
 } from "../shared/constants.js";
 
 export default class Controls {
-  constructor(player, scene) {
+  constructor(player, scene, room) {
     this.player = player;
     this.scene = scene;
+    this.room = room; // Store room reference
     this.speed = 0;
-    this.maxSpeed = DEFAULT_MAX_SPEED; // Replaced 10
-    this.strafeSpeed = STRAFE_SPEED; // Replaced 5
+    this.maxSpeed = DEFAULT_MAX_SPEED;
+    this.strafeSpeed = STRAFE_SPEED;
     this.keys = { w: false, s: false, a: false, d: false, space: false };
     this.mouseDelta = new THREE.Vector2();
     this.isDashing = false;
@@ -77,9 +79,12 @@ export default class Controls {
   }
 
   update(delta) {
+    const sensitivity = MOUSE_SENSITIVITY;
+    const yawDelta = -this.mouseDelta.x * sensitivity;
+    const pitchDelta = this.mouseDelta.y * sensitivity;
+
     if (!this.player.object) return;
 
-    // Update maxSpeed and dashSpeed from fishData
     const tierData = this.player.fishData?.fishTiers.find(
       (tier) => tier.tier === this.player.tier
     );
@@ -92,66 +97,48 @@ export default class Controls {
       this.speed = Math.min(
         this.speed + delta * SPEED_ACCELERATION,
         this.maxSpeed
-      ); // Replaced 5
+      );
     }
     if (this.keys.s) {
-      this.speed = Math.max(this.speed - delta * SPEED_DECELERATION, 0); // Replaced 10
-    }
-    if (
-      !this.keys.w &&
-      !this.keys.s &&
-      !this.isDashing &&
-      this.postDashDecay <= 0
-    ) {
-      this.speed = Math.max(this.speed - delta * SPEED_IDLE_DECELERATION, 0); // Replaced 5
+      this.speed = Math.max(this.speed - delta * SPEED_DECELERATION, 0);
     }
 
-    if (
-      !this.keys.w &&
-      !this.keys.s &&
-      !this.isDashing &&
-      this.postDashDecay <= 0
-    ) {
-      this.speed = Math.max(this.speed - delta * 5, 0);
-    }
+    const xpThreshold = tierData?.defaultFish.stats.xpThreshold || 0;
+    const minXpToDash = xpThreshold * DASH_XP_THRESHOLD;
+    const canDash = (this.player.stats?.xp || 0) >= minXpToDash;
 
-    if (this.keys.space && !this.isDashing && this.dashCooldown <= 0) {
-      this.isDashing = true;
-      this.dashDuration = DASH_DURATION; // Replaced 0.5
-      this.dashCooldown = DASH_COOLDOWN; // Replaced 2
+    if (this.keys.space && canDash) {
+      if (!this.isDashing) {
+        this.isDashing = true;
+        this.room.send("startDash");
+        const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(
+          this.player.object.quaternion
+        );
+        this.player.velocityY = forward.y * this.dashSpeed; // Add vertical component
+      }
       this.speed = this.dashSpeed;
-      this.postDashDecay = POST_DASH_DECAY; // Replaced 1
-    }
-
-    if (this.isDashing) {
-      this.dashDuration -= delta;
-      if (this.dashDuration <= 0) {
+    } else {
+      if (this.isDashing) {
         this.isDashing = false;
+        this.room.send("endDash");
       }
+      this.speed = Math.min(this.speed, this.maxSpeed);
     }
-    if (this.postDashDecay > 0) {
-      this.postDashDecay -= delta;
-      if (this.postDashDecay <= 0) {
-        this.speed = Math.min(this.speed, this.maxSpeed); // Cap after decay
-      } else {
-        // Linear decay from dashSpeed to maxSpeed over 1 second
-        const decayProgress = 1 - this.postDashDecay / 1;
-        this.speed =
-          this.dashSpeed - (this.dashSpeed - this.maxSpeed) * decayProgress;
-      }
-    }
-    this.dashCooldown = Math.max(0, this.dashCooldown - delta);
 
-    const sensitivity = MOUSE_SENSITIVITY;
-    this.yaw -= this.mouseDelta.x * sensitivity;
-    this.pitch += this.mouseDelta.y * sensitivity;
+    if (!this.keys.w && !this.keys.s && !this.isDashing) {
+      this.speed = Math.max(this.speed - delta * SPEED_IDLE_DECELERATION, 0);
+    }
+
+    // Smooth rotation with damping
+    this.yaw += yawDelta * 0.1; // Reduced impact for smoother turns
+    this.pitch += pitchDelta * 0.1;
     this.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.pitch));
     this.yaw = this.yaw % (2 * Math.PI);
     if (this.yaw < 0) this.yaw += 2 * Math.PI;
 
     const quaternion = new THREE.Quaternion();
     quaternion.setFromEuler(new THREE.Euler(this.pitch, this.yaw, 0, "YXZ"));
-    this.player.object.quaternion.copy(quaternion);
+    this.player.object.quaternion.slerp(quaternion, 0.1);
 
     const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(
       this.player.object.quaternion

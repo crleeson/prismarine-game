@@ -1,6 +1,5 @@
 // src/client/decorations.js
 import * as THREE from "three";
-import { createNoise2D } from "simplex-noise";
 import {
   CHUNK_WIDTH,
   CHUNK_DEPTH,
@@ -18,10 +17,10 @@ import {
   DECORATION_BASE_HEIGHT,
 } from "../shared/constants.js";
 
-const noise2D = createNoise2D();
-
 export default class Decorations {
-  constructor() {
+  constructor(seabed, scene) {
+    this.seabed = seabed;
+    this.scene = scene;
     this.rocks = [];
     this.bunches = [];
     this.initRocks();
@@ -29,97 +28,154 @@ export default class Decorations {
   }
 
   initRocks() {
-    const largeRockCount = LARGE_ROCK_COUNT; // Replaced 8
-    const largeRockPositions = [];
-    for (let i = 0; i < largeRockCount; i++) {
-      const size = Math.random() * 3 + 2;
-      const geometry = new THREE.DodecahedronGeometry(size, 0);
-      const material = new THREE.MeshBasicMaterial({ color: 0x808080 });
-      const rock = new THREE.Mesh(geometry, material);
-      let x = (Math.random() - 0.5) * CHUNK_WIDTH * 0.8;
-      let z = (Math.random() - 0.5) * CHUNK_DEPTH * 0.8;
-      x = Math.max(CHUNK_MIN_X, Math.min(CHUNK_MAX_X, x));
-      z = Math.max(CHUNK_MIN_Z, Math.min(CHUNK_MAX_Z, z));
-      rock.position.set(x, DECORATION_BASE_HEIGHT - size / 2, z);
-      this.rocks.push(rock);
-      largeRockPositions.push({ x, z });
-    }
+    this.rocks = []; // Clear existing rocks
+    const formationCount = 5; // Number of rock clusters (adjustable)
+    const rockTypes = [
+      THREE.DodecahedronGeometry,
+      THREE.IcosahedronGeometry,
+      THREE.OctahedronGeometry,
+    ];
+    const colors = [0x999999, 0x777777, 0x555555, 0x888888];
 
-    const smallRockCount = SMALL_ROCK_COUNT; // Replaced 60
-    for (let i = 0; i < smallRockCount; i++) {
-      const size = Math.random() * 0.5 + 0.2;
-      const geometry = new THREE.DodecahedronGeometry(size, 0);
-      const material = new THREE.MeshBasicMaterial({ color: 0x808080 });
-      const rock = new THREE.Mesh(geometry, material);
-      const nearRock =
-        largeRockPositions[
-          Math.floor(Math.random() * largeRockPositions.length)
-        ];
-      const offsetX = (Math.random() - 0.5) * 10;
-      const offsetZ = (Math.random() - 0.5) * 10;
-      let x = nearRock.x + offsetX;
-      let z = nearRock.z + offsetZ;
-      x = Math.max(CHUNK_MIN_X, Math.min(CHUNK_MAX_X, x));
-      z = Math.max(CHUNK_MIN_Z, Math.min(CHUNK_MAX_Z, z));
-      rock.position.set(x, DECORATION_BASE_HEIGHT - size / 2, z);
-      this.rocks.push(rock);
+    for (let i = 0; i < formationCount; i++) {
+      const centerX = (Math.random() - 0.5) * CHUNK_WIDTH * 0.8;
+      const centerZ = (Math.random() - 0.5) * CHUNK_DEPTH * 0.8;
+      const seabedHeight = this.seabed.getExactHeightAt(
+        centerX,
+        centerZ,
+        this.scene
+      );
+
+      // 1-2 Big Rocks
+      const bigRockCount = Math.random() < 0.5 ? 1 : 2;
+      for (let j = 0; j < bigRockCount; j++) {
+        const size = Math.random() * 2 + 3; // 3-5 units
+        const GeometryType =
+          rockTypes[Math.floor(Math.random() * rockTypes.length)];
+        const geometry = new GeometryType(size, 0);
+        const color = colors[Math.floor(Math.random() * colors.length)];
+        const material = new THREE.MeshPhongMaterial({
+          color: color,
+          shininess: 10,
+          specular: 0x333333,
+        });
+        const rock = new THREE.Mesh(geometry, material);
+        const offsetX = (Math.random() - 0.5) * 5; // Tight cluster
+        const offsetZ = (Math.random() - 0.5) * 5;
+        rock.position.set(
+          Math.max(CHUNK_MIN_X, Math.min(CHUNK_MAX_X, centerX + offsetX)),
+          seabedHeight + size,
+          Math.max(CHUNK_MIN_Z, Math.min(CHUNK_MAX_Z, centerZ + offsetZ))
+        );
+        rock.castShadow = true;
+        rock.receiveShadow = true;
+        rock.rotation.set(
+          Math.random() * Math.PI,
+          Math.random() * Math.PI,
+          Math.random() * Math.PI
+        );
+        this.rocks.push(rock);
+      }
+
+      // 2-3 Medium Rocks
+      const mediumRockCount = Math.random() < 0.5 ? 2 : 3;
+      for (let j = 0; j < mediumRockCount; j++) {
+        const size = Math.random() * 1 + 1.5; // 1.5-2.5 units
+        const GeometryType =
+          rockTypes[Math.floor(Math.random() * rockTypes.length)];
+        const geometry = new GeometryType(size, 0);
+        const color = colors[Math.floor(Math.random() * colors.length)];
+        const material = new THREE.MeshPhongMaterial({
+          color: color,
+          shininess: 10,
+          specular: 0x333333,
+        });
+        const rock = new THREE.Mesh(geometry, material);
+        const offsetX = (Math.random() - 0.5) * 8; // Slightly wider spread
+        const offsetZ = (Math.random() - 0.5) * 8;
+        rock.position.set(
+          Math.max(CHUNK_MIN_X, Math.min(CHUNK_MAX_X, centerX + offsetX)),
+          seabedHeight + size,
+          Math.max(CHUNK_MIN_Z, Math.min(CHUNK_MAX_Z, centerZ + offsetZ))
+        );
+        rock.castShadow = true;
+        rock.receiveShadow = true;
+        rock.rotation.set(
+          Math.random() * Math.PI,
+          Math.random() * Math.PI,
+          Math.random() * Math.PI
+        );
+        this.rocks.push(rock);
+      }
+
+      // 5-6 Small Rocks
+      const smallRockCount = Math.random() < 0.5 ? 5 : 6;
+      for (let j = 0; j < smallRockCount; j++) {
+        const size = Math.random() * 0.5 + 0.3; // 0.3-0.8 units
+        const GeometryType =
+          rockTypes[Math.floor(Math.random() * rockTypes.length)];
+        const geometry = new GeometryType(size, 0);
+        const color = colors[Math.floor(Math.random() * colors.length)];
+        const material = new THREE.MeshPhongMaterial({
+          color: color,
+          shininess: 10,
+          specular: 0x333333,
+        });
+        const rock = new THREE.Mesh(geometry, material);
+        const offsetX = (Math.random() - 0.5) * 10; // Wider spread
+        const offsetZ = (Math.random() - 0.5) * 10;
+        rock.position.set(
+          Math.max(CHUNK_MIN_X, Math.min(CHUNK_MAX_X, centerX + offsetX)),
+          seabedHeight + size,
+          Math.max(CHUNK_MIN_Z, Math.min(CHUNK_MAX_Z, centerZ + offsetZ))
+        );
+        rock.castShadow = true;
+        rock.receiveShadow = true;
+        rock.rotation.set(
+          Math.random() * Math.PI,
+          Math.random() * Math.PI,
+          Math.random() * Math.PI
+        );
+        this.rocks.push(rock);
+      }
     }
   }
 
   initBunches() {
-    const bunchCount = BUNCH_COUNT; // 4
+    const bunchCount = BUNCH_COUNT;
     const colors = [0xff4040, 0xff69b4, 0x1e90ff, 0xffd700, 0xda70d6];
     for (let i = 0; i < bunchCount; i++) {
       const group = new THREE.Group();
       const coralCount =
-        Math.floor(Math.random() * CORAL_COUNT_RANGE) + CORAL_COUNT_MIN; // 15 to 30
+        Math.floor(Math.random() * CORAL_COUNT_RANGE) + CORAL_COUNT_MIN;
       for (let j = 0; j < coralCount; j++) {
-        const type = Math.floor(Math.random() * 3);
-        let coral;
+        const width = Math.random() * 0.3 + 0.2;
+        const depth = Math.random() * 0.3 + 0.2;
+        const height = Math.random() * 3 + 2;
+        const geometry = new THREE.BoxGeometry(width, height, depth);
         const coralColor = colors[Math.floor(Math.random() * colors.length)];
+        const material = new THREE.MeshPhongMaterial({
+          color: coralColor,
+          shininess: 50,
+          specular: 0xffffff,
+          emissive: coralColor,
+          emissiveIntensity: 0.5, // Increased from 0.2 for stronger glow
+        });
+        const coral = new THREE.Mesh(geometry, material);
+        coral.position.set(
+          (Math.random() - 0.5) * 5,
+          height / 2 + DECORATION_BASE_HEIGHT,
+          (Math.random() - 0.5) * 5
+        );
+        coral.rotation.y = Math.random() * Math.PI;
+        coral.castShadow = true;
+        coral.receiveShadow = true;
+        group.add(coral);
 
-        if (type === 0) {
-          // Tall coral (cylinder)
-          const height = Math.random() * 3 + 2;
-          const geometry = new THREE.CylinderGeometry(0.2, 0.2, height, 8);
-          const material = new THREE.MeshBasicMaterial({ color: coralColor });
-          coral = new THREE.Mesh(geometry, material);
-          coral.position.set(
-            (Math.random() - 0.5) * 5,
-            height / 2 + DECORATION_BASE_HEIGHT,
-            (Math.random() - 0.5) * 5
-          );
-        } else if (type === 1) {
-          // Long tube coral (horizontal cylinder)
-          const length = Math.random() * 2 + 1;
-          const geometry = new THREE.CylinderGeometry(0.1, 0.1, length, 8);
-          const material = new THREE.MeshBasicMaterial({ color: coralColor });
-          coral = new THREE.Mesh(geometry, material);
-          coral.rotation.z = Math.PI / 2; // Horizontal
-          coral.position.set(
-            (Math.random() - 0.5) * 5,
-            length / 2 + DECORATION_BASE_HEIGHT,
-            (Math.random() - 0.5) * 5
-          );
-        } else {
-          // Fan coral (plane)
-          const width = Math.random() * 2 + 1;
-          const height = Math.random() * 1 + 0.5;
-          const geometry = new THREE.PlaneGeometry(width, height);
-          const material = new THREE.MeshBasicMaterial({
-            color: coralColor,
-            side: THREE.DoubleSide,
-          });
-          coral = new THREE.Mesh(geometry, material);
-          coral.rotation.x = Math.PI / 2; // Flat on seabed
-          coral.position.set(
-            (Math.random() - 0.5) * 5,
-            height / 2 + DECORATION_BASE_HEIGHT,
-            (Math.random() - 0.5) * 5
-          );
-        }
-
-        group.add(coral); // Add coral to the group
+        // Optional: Add point light for extra glow
+        const glowLight = new THREE.PointLight(coralColor, 0.5, 5); // Intensity 0.5, distance 5
+        glowLight.position.copy(coral.position);
+        group.add(glowLight);
       }
       let x = (Math.random() - 0.5) * CHUNK_WIDTH * 0.7;
       let z = (Math.random() - 0.5) * CHUNK_DEPTH * 0.7;
@@ -182,6 +238,9 @@ export default class Decorations {
   }
 
   addToScene(scene) {
+    this.scene = scene; // Store scene reference
+    this.rocks = []; // Clear rocks to re-init
+    this.initRocks(); // Call here after seabed is in scene
     this.rocks.forEach((rock) => scene.add(rock));
     this.bunches.forEach((bunch) => scene.add(bunch));
     const ambientLight = new THREE.AmbientLight(0x404040, 0.5);

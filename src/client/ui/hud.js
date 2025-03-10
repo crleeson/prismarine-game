@@ -6,19 +6,19 @@ export default class HUD {
       "health-bar",
       "20px",
       "20px",
-      "200px",
-      "20px",
+      "300px",
+      "15px",
       "#90EE90",
       "horizontal"
     );
-    this.speedBar = this.createSpeedBar(
+    this.speedBar = this.createBar(
       "speed-bar",
-      "calc(100% - 40px)",
-      "50%",
       "20px",
-      "200px",
+      "45px", // Below health bar (20px + 20px height + 10px gap)
+      "250px",
+      "15px",
       "#FFFF00",
-      "vertical"
+      "horizontal"
     );
     this.xpBar = this.createBar(
       "xp-bar",
@@ -37,104 +37,46 @@ export default class HUD {
     container.style.position = "absolute";
     container.style.left = left;
     container.style.top = top;
-    // Only apply transform for xp-bar to center it horizontally
     if (id === "xp-bar") {
-      container.style.transform = "translateX(-50%)";
+      container.style.transform = "translateX(-50%)"; // XP bar centering
     }
     container.style.width = width;
     container.style.height = height;
-    container.style.background = "rgba(255, 255, 255, 0.2)";
-    container.style.border = "1px solid rgba(255, 255, 255, 0.5)";
-    container.style.borderRadius = "10px";
+    container.style.background = "rgba(255, 255, 255, 0.2)"; // XP bar background
+    container.style.border = "1px solid rgba(255, 255, 255, 0.5)"; // XP bar border
+    container.style.borderRadius = "10px"; // XP bar radius
     container.style.overflow = "hidden";
 
     const fill = document.createElement("div");
     fill.style.background = color;
-    fill.style.opacity = "0.8";
+    fill.style.opacity = "0.8"; // XP bar semi-transparency
     fill.style.borderRadius = "10px";
-    if (orientation === "horizontal") {
-      fill.style.height = "100%";
-      fill.style.width = "0%";
-    } else {
-      fill.style.width = "100%";
-      fill.style.height = "0%";
-      fill.style.position = "absolute";
-      fill.style.bottom = "0";
-    }
+    fill.style.height = "100%"; // Always horizontal
+    fill.style.width = "0%";
     container.appendChild(fill);
 
     document.body.appendChild(container);
-    return { container, fill, orientation };
-  }
-
-  createSpeedBar(id, left, top, width, height, color, orientation) {
-    const container = document.createElement("div");
-    container.id = id;
-    container.style.position = "absolute";
-    container.style.left = left;
-    container.style.top = top;
-    container.style.transform =
-      orientation === "horizontal" ? "translateX(0%)" : "translateY(-50%)";
-    container.style.width = width;
-    container.style.height = height;
-    container.style.background = "rgba(255, 255, 255, 0.2)";
-    container.style.border = "2px solid #FFFFFF";
-    container.style.borderRadius = "10px";
-    container.style.overflow = "hidden";
-    container.style.boxSizing = "border-box";
-
-    const outlineFill = document.createElement("div");
-    outlineFill.style.position = "absolute";
-    outlineFill.style.top = "0";
-    outlineFill.style.left = "0";
-    outlineFill.style.width = "100%";
-    outlineFill.style.height = "100%";
-    outlineFill.style.border = "2px solid #FFFFFF";
-    outlineFill.style.borderRadius = "10px";
-    outlineFill.style.boxSizing = "border-box";
-    outlineFill.style.clipPath = "inset(0% 0% 100% 0%)";
-    outlineFill.style.background = "rgba(255, 255, 0, 0.3)";
-    container.appendChild(outlineFill);
-
-    const fill = document.createElement("div");
-    fill.style.background = color;
-    fill.style.opacity = "0.8";
-    fill.style.borderRadius = "10px";
-    fill.style.width = "100%";
-    fill.style.height = "0%";
-    fill.style.position = "absolute";
-    fill.style.bottom = "0";
-    container.appendChild(fill);
-
-    document.body.appendChild(container);
-    return { container, fill, outlineFill, orientation };
+    return { container, fill, orientation: "horizontal" }; // Force horizontal
   }
 
   update() {
-    const health = this.player.stats?.hp || 100; // Use hp, not health
+    const health = this.player.stats?.hp || 100;
     this.healthBar.fill.style.width = `${health}%`;
 
     const speedPercent = Math.min(
       (this.controls.speed / this.controls.maxSpeed) * 100,
       100
     );
-    this.speedBar.fill.style.height = `${speedPercent}%`;
-
-    const dashCooldown = this.controls.dashCooldown;
-    const cooldownPercent = Math.min(((2 - dashCooldown) / 2) * 100, 100);
-    this.speedBar.outlineFill.style.clipPath = `inset(${
-      100 - cooldownPercent
-    }% 0% 0% 0%)`;
-    this.speedBar.outlineFill.style.background =
-      cooldownPercent >= 100
-        ? "rgba(255, 255, 0, 0.5)"
-        : "rgba(255, 255, 0, 0.3)";
+    this.speedBar.fill.style.width = `${speedPercent}%`; // Ensure correct display
+    this.speedBar.fill.style.background = this.controls.isDashing
+      ? "#FFA500"
+      : "#FFFF00";
 
     const xp = this.player.stats?.xp || 0;
     const tierData = this.player.fishData.fishTiers.find(
       (tier) => tier.tier === this.player.tier
     );
-    const xpThreshold = tierData.defaultFish.stats.xpThreshold || 100; // Fallback to 100 if null
+    const xpThreshold = tierData.defaultFish.stats.xpThreshold || 100;
     const xpPercent = xpThreshold
       ? Math.min((xp / xpThreshold) * 100, 100)
       : xp;

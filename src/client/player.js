@@ -1,3 +1,4 @@
+// src/client/player.js
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import {
@@ -34,8 +35,8 @@ export default class Player {
     this.plankton = null;
     this.stateReady = false;
     this.isLoaded = false;
-    this.cumulativeXp = 0; // Track total XP earned
-    this.modelCache = {}; // Cache for preloaded models
+    this.cumulativeXp = 0;
+    this.modelCache = {};
     console.log("Player constructor called, starting fishData load");
     this.loadFishData();
   }
@@ -64,7 +65,7 @@ export default class Player {
     this.plankton = plankton;
     console.log("Player.init called");
 
-    const maxWait = MAX_WAIT_TIME; // Replaced 5000
+    const maxWait = MAX_WAIT_TIME;
     let waited = 0;
     while (!this.fishData && waited < maxWait) {
       console.log("Waiting for fishData to load...");
@@ -126,13 +127,13 @@ export default class Player {
 
       let gltf;
       if (this.modelCache[this.tier]) {
-        gltf = this.modelCache[this.tier]; // Use cached model
+        gltf = this.modelCache[this.tier];
         console.log(`Using cached model for tier ${this.tier}`);
       } else {
         gltf = await new Promise((resolve, reject) => {
           loader.load(modelPath, resolve, undefined, reject);
         });
-        this.modelCache[this.tier] = gltf; // Cache it
+        this.modelCache[this.tier] = gltf;
         console.log(`Model loaded and cached for ${fish.name}`);
       }
 
@@ -143,7 +144,7 @@ export default class Player {
       this.object.rotation.set(0, Math.PI, 0);
 
       this.mixer = new THREE.AnimationMixer(this.object);
-      this.animations = {}; // Clear previous animations
+      this.animations = {};
       gltf.animations.forEach((clip) => {
         this.animations[clip.name] = this.mixer.clipAction(clip);
       });
@@ -199,12 +200,15 @@ export default class Player {
       this.biteHitbox.position.set(0, 0, this.hitboxSize / 2);
       this.object.add(this.biteHitbox);
 
+      const box = new THREE.Box3().setFromObject(this.object);
+      this.modelBaseSize = box.getSize(new THREE.Vector3());
+      console.log("Model base size:", this.modelBaseSize);
+
       this.scene.add(this.object);
       this.isLoaded = true;
 
       console.log("Player model fully loaded and added to scene");
 
-      // Preload next tier if available
       if (this.tier < this.fishData.fishTiers.length - 1) {
         this.preloadNextTier();
       }
@@ -228,7 +232,7 @@ export default class Player {
       nextTier >= this.fishData.fishTiers.length ||
       this.modelCache[nextTier]
     ) {
-      return; // No next tier or already cached
+      return;
     }
 
     const nextTierData = this.fishData.fishTiers.find(
@@ -257,7 +261,6 @@ export default class Player {
       return;
     }
 
-    const { isAttacking = false } = options;
     if (this.mixer) {
       this.mixer.update(delta);
     }
@@ -268,90 +271,100 @@ export default class Player {
     const fish = tierData.defaultFish;
     const xpThreshold = fish.stats.xpThreshold;
     let currentScale = this.baseScale;
+    let scaledHitboxSize = this.hitboxSize; // Default to base size
     if (xpThreshold && this.stats.xp !== undefined) {
       const xpProgress = Math.min(this.stats.xp / xpThreshold, 1);
       currentScale =
         this.baseScale + (this.maxScale - this.baseScale) * xpProgress;
       this.object.scale.set(currentScale, currentScale, currentScale);
 
-      if (
-        this.stats.xp >= xpThreshold &&
-        this.tier < this.fishData.fishTiers.length - 1
-      ) {
-        const evolutionPosition = this.object.position.clone();
-        this.cumulativeXp += this.stats.xp;
-        this.stats.xp = 0;
-        this.tier += 1;
-        this.room.send("evolve", { tier: this.tier });
-        console.log(
-          `Evolving to tier ${this.tier}, Cumulative XP: ${this.cumulativeXp}`
-        );
-        this.loadModel().then(() => {
-          this.object.position.copy(evolutionPosition);
-          console.log("Post-evolution position:", this.object.position);
-        });
-      }
+      const scaleFactor = currentScale / this.baseScale;
+      scaledHitboxSize = this.hitboxSize * scaleFactor;
+
+      this.bodyHitbox.geometry.dispose();
+      this.bodyHitbox.geometry = new THREE.BoxGeometry(
+        scaledHitboxSize,
+        scaledHitboxSize,
+        scaledHitboxSize
+      );
+      this.biteHitbox.geometry.dispose();
+      this.biteHitbox.geometry = new THREE.BoxGeometry(
+        scaledHitboxSize,
+        scaledHitboxSize,
+        scaledHitboxSize * 0.2
+      );
+      this.biteHitbox.position.set(0, 0, scaledHitboxSize / 2);
     }
 
-    const scaledHitboxSize = this.hitboxSize * (currentScale / this.baseScale);
-    this.bodyHitbox.scale.set(1, 1, 1);
-    this.bodyHitbox.geometry = new THREE.BoxGeometry(
-      scaledHitboxSize,
-      scaledHitboxSize,
-      scaledHitboxSize
-    );
-    this.biteHitbox.scale.set(1, 1, 1);
-    this.biteHitbox.geometry = new THREE.BoxGeometry(
-      scaledHitboxSize,
-      scaledHitboxSize,
-      scaledHitboxSize * 0.2
-    );
-    this.biteHitbox.position.set(0, 0, scaledHitboxSize / 2);
-
     if (!this.attachedTo) {
-      const seabedHeight = this.seabed
-        ? this.seabed.getHeightAt(
-            this.object.position.x,
-            this.object.position.z
-          )
-        : -5;
+      const previousPosition = this.object.position.clone();
+      const scaledHitboxSize =
+        this.hitboxSize * (currentScale / this.baseScale);
+
+      // Apply gravity when above water
+      const waterHeight = 20; // CHUNK_HEIGHT
+      if (this.object.position.y > waterHeight) {
+        const gravity = -9.8; // m/s^2
+        this.velocityY = (this.velocityY || 0) + gravity * delta;
+        this.object.position.y += this.velocityY * delta;
+      } else {
+        this.velocityY = 0; // Reset when in water
+      }
+
+      // Seabed collision
+      const seabedHeight = this.seabed.getExactHeightAt(
+        this.object.position.x,
+        this.object.position.z,
+        this.scene
+      );
       const playerBottom = this.object.position.y - scaledHitboxSize / 2;
       if (playerBottom < seabedHeight) {
         this.object.position.y = seabedHeight + scaledHitboxSize / 2;
+        this.velocityY = 0;
       }
 
       if (this.decorations) {
         this.decorations.rocks.forEach((rock) => {
           const decorationBox = new THREE.Box3().setFromObject(rock);
           const playerBox = new THREE.Box3().setFromObject(this.bodyHitbox);
+
           if (playerBox.intersectsBox(decorationBox)) {
             const pushBack = new THREE.Vector3()
               .subVectors(this.object.position, rock.position)
-              .normalize()
-              .multiplyScalar(scaledHitboxSize * 0.1);
-            this.object.position.add(pushBack);
-          }
-        });
+              .normalize();
 
-        this.decorations.bunches.forEach((bunch) => {
-          bunch.children.forEach((coral) => {
-            const decorationBox = new THREE.Box3().setFromObject(coral);
-            const playerBox = new THREE.Box3().setFromObject(this.bodyHitbox);
-            if (playerBox.intersectsBox(decorationBox)) {
-              const pushBack = new THREE.Vector3()
-                .subVectors(
-                  this.object.position,
-                  coral.getWorldPosition(new THREE.Vector3())
-                )
-                .normalize()
-                .multiplyScalar(scaledHitboxSize * 0.1);
+            const playerHalfSize = scaledHitboxSize / 2;
+            const rockSize = rock.geometry.parameters.radius * 2;
+            const distance = this.object.position.distanceTo(rock.position);
+            const overlap = playerHalfSize + rockSize - distance;
+
+            if (overlap > 0) {
+              // Dampened pushback: move just enough to resolve collision
+              pushBack.multiplyScalar(overlap * 0.5); // Reduced strength
               this.object.position.add(pushBack);
+              console.log(
+                "Collision resolved: Rock at:",
+                rock.position,
+                "Player moved to:",
+                this.object.position,
+                "Overlap:",
+                overlap
+              );
             }
-          });
+          } else {
+            console.log(
+              "No collision: Rock box:",
+              decorationBox.min,
+              decorationBox.max,
+              "Player box:",
+              playerBox.min,
+              playerBox.max
+            );
+          }
         });
       }
 
-      if (this.mixer && isAttacking) {
+      if (this.mixer && options.isAttacking) {
         this.playAnimation("eat");
       }
 
@@ -360,18 +373,19 @@ export default class Player {
         this.checkCollision(biteBox, delta);
       }
 
+      // Clamp position after collision resolution
       this.object.position.x = Math.max(
         CHUNK_MIN_X,
         Math.min(CHUNK_MAX_X, this.object.position.x)
-      ); // Replaced -50, 50
+      );
       this.object.position.y = Math.max(
         CHUNK_MIN_Y,
         Math.min(CHUNK_MAX_Y, this.object.position.y)
-      ); // Replaced 0, 100
+      );
       this.object.position.z = Math.max(
         CHUNK_MIN_Z,
         Math.min(CHUNK_MAX_Z, this.object.position.z)
-      ); // Replaced -50, 50
+      );
     }
 
     this.room.send("move", {
@@ -475,7 +489,7 @@ export default class Player {
     }
 
     if (this.room.state && this.room.state.players) {
-      Object.values(this.state.players).forEach((otherPlayer) => {
+      Object.values(this.room.state.players).forEach((otherPlayer) => {
         if (
           otherPlayer.sessionId !== this.sessionId &&
           otherPlayer.biteHitbox
