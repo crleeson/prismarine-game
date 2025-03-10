@@ -111,7 +111,7 @@ export default class HUD {
   }
 
   update() {
-    const health = this.player.stats?.health || 100;
+    const health = this.player.stats?.hp || 100; // Use hp, not health
     this.healthBar.fill.style.width = `${health}%`;
 
     const speedPercent = Math.min(
@@ -131,6 +131,13 @@ export default class HUD {
         : "rgba(255, 255, 0, 0.3)";
 
     const xp = this.player.stats?.xp || 0;
-    this.xpBar.fill.style.width = `${xp}%`;
+    const tierData = this.player.fishData.fishTiers.find(
+      (tier) => tier.tier === this.player.tier
+    );
+    const xpThreshold = tierData.defaultFish.stats.xpThreshold || 100; // Fallback to 100 if null
+    const xpPercent = xpThreshold
+      ? Math.min((xp / xpThreshold) * 100, 100)
+      : xp;
+    this.xpBar.fill.style.width = `${xpPercent}%`;
   }
 }

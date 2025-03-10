@@ -26,7 +26,6 @@ let player,
   effects,
   plankton;
 let isClientPaused = false;
-let lastTime = performance.now();
 
 console.log("Starting Prismarine...");
 
@@ -46,7 +45,7 @@ style.innerHTML = `
     border-radius: 50%;
     transform: translate(-50%, -50%);
     pointer-events: none;
-    display: none; // Hidden by default
+    display: none;
   }
 `;
 document.head.appendChild(style);
@@ -55,7 +54,6 @@ const crosshair = document.createElement("div");
 crosshair.id = "crosshair";
 document.body.appendChild(crosshair);
 
-// Add debug mode flag
 let debugMode = false;
 
 client
@@ -90,68 +88,60 @@ client
     water.addToScene(scene);
     console.log("Water added to scene");
 
-    player = new Player(room, room.sessionId);
-    controls = new Controls(player, scene); // Create controls first
+    player = new Player(room, room.sessionId, scene);
+    controls = new Controls(player, scene);
     plankton = new Plankton(scene, player, seabed);
-    player.init(seabed, decorations, controls, plankton); // Pass controls to init
-    player.controls = controls; // Ensure controls is set
+    player.init(seabed, decorations, controls, plankton);
+    player.controls = controls;
 
-    const BASE_CAMERA_DISTANCE = 5;
+    const BASE_CAMERA_DISTANCE = 2.5;
     camera = new THREE.PerspectiveCamera(
       75,
       window.innerWidth / window.innerHeight,
       0.1,
       1000
     );
-    const updateCameraPosition = () => {
+
+    const clock = new THREE.Clock();
+
+    const updateCameraPosition = (delta) => {
       if (player.object) {
+        const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(
+          player.object.quaternion
+        );
         const scale = player.stats?.scale || 1.0;
         const distance = (BASE_CAMERA_DISTANCE / scale) * player.hitboxSize;
+
         const targetOffset = new THREE.Vector3(0, 0.5 * scale, -distance);
-        const currentOffset = camera.position
+        const idealPosition = player.object.position
           .clone()
-          .sub(player.object.position)
-          .applyQuaternion(
-            player.object.getWorldQuaternion(new THREE.Quaternion())
-          );
+          .add(targetOffset.applyQuaternion(player.object.quaternion));
+        camera.position.lerp(idealPosition, 5 * delta);
 
-        const smoothedOffset = currentOffset.clone().lerp(targetOffset, 0.1);
-        camera.position.copy(player.object.position).add(smoothedOffset);
-
-        // Look slightly ahead of the fish
-        const lookAheadDistance = distance * 0.5; // Look 50% of the camera distance ahead
-        const lookAtTarget = player.object.position
+        const speedFactor = Math.min(controls.speed / controls.maxSpeed, 1);
+        const lookAheadDistance = distance + speedFactor * 2; // Reduced from 5 to 2
+        const lookAtPoint = player.object.position
           .clone()
-          .add(
-            new THREE.Vector3(0, 0, -lookAheadDistance).applyQuaternion(
-              player.object.quaternion
-            )
-          ); // Negative Z for forward
-
-        camera.rotation.order = "YXZ";
-        camera.rotation.y = player.object.rotation.y;
-        camera.rotation.x = -0.35;
-        camera.rotation.z = 0;
-
-        camera.lookAt(lookAtTarget); // Look slightly ahead
-
-        const waterHeight = water.getHeight();
-        const isUnderwater = camera.position.y < waterHeight;
-        if (isUnderwater) {
-          renderer.setClearColor(0x000066, 1);
-        } else {
-          renderer.setClearColor(0x000033, 1);
-        }
-
-        const seabedHeight = -5;
-        const t =
-          (camera.position.y - seabedHeight) / (waterHeight - seabedHeight);
-        const fogColor = new THREE.Color(0x000033).lerp(
-          new THREE.Color(0x000010),
-          1 - Math.max(0, Math.min(1, 1 - t))
-        );
-        scene.fog.color = fogColor;
+          .add(forward.multiplyScalar(lookAheadDistance));
+        camera.lookAt(lookAtPoint);
       }
+
+      const waterHeight = water.getHeight();
+      const isUnderwater = camera.position.y < waterHeight;
+      if (isUnderwater) {
+        renderer.setClearColor(0x000066, 1);
+      } else {
+        renderer.setClearColor(0x000033, 1);
+      }
+
+      const seabedHeight = -5;
+      const t =
+        (camera.position.y - seabedHeight) / (waterHeight - seabedHeight);
+      const fogColor = new THREE.Color(0x000033).lerp(
+        new THREE.Color(0x000010),
+        1 - Math.max(0, Math.min(1, 1 - t))
+      );
+      scene.fog.color = fogColor;
     };
 
     pauseUI = new PauseUI(() => {
@@ -189,7 +179,6 @@ client
         console.log(`Debug mode ${debugMode ? "enabled" : "disabled"}`);
         crosshair.style.display = debugMode ? "block" : "none";
       }
-      // Disable A and D keys (no functionality for now)
       if (e.key === "a" || e.key === "d") {
         e.preventDefault();
         console.log("A/D keys disabled");
@@ -205,11 +194,17 @@ client
 
     room.onStateChange((state) => {
       if (!state.players[room.sessionId]) return;
+      console.log("Server state position:", state.players[room.sessionId]);
       player.stats = { ...state.players[room.sessionId].stats };
       const newTier = state.players[room.sessionId].tier;
       if (player.tier !== newTier) {
+        const currentPosition = player.object
+          ? player.object.position.clone()
+          : new THREE.Vector3(0, 0, 0);
         player.tier = newTier;
-        player.loadModel();
+        player.loadModel().then(() => {
+          player.object.position.copy(currentPosition);
+        });
       }
       player.hitboxSize = state.players[room.sessionId].stats.hitboxSize || 0.5;
       if (player.attachedTo !== state.players[room.sessionId].attachedTo) {
@@ -219,37 +214,37 @@ client
           player.object.position.set(parent.x, parent.y, parent.z + 1);
         }
       }
-      player.stateReady = true; // Set flag when state is ready
-      updateCameraPosition();
+      player.stateReady = true;
+      updateCameraPosition(0);
     });
 
-    function animate() {
+    // Single animation loop
+    const animate = () => {
       requestAnimationFrame(animate);
-      const now = performance.now();
-      const delta = Math.min((now - lastTime) / 1000, 0.1);
-      lastTime = now;
+      const delta = Math.min(clock.getDelta(), 0.1); // Consistent delta
 
       if (player.object && !scene.children.includes(player.object)) {
         scene.add(player.object);
         console.log("Player object added to scene");
       }
 
-      player.update(delta);
-      particles.update(delta, camera);
-      decorations.update(delta);
-      water.update(delta);
-      effects.update(delta);
-      plankton.update(delta);
-
       if (!isClientPaused) {
         controls.update(delta);
-        updateCameraPosition();
-        renderer.render(scene, camera);
+        player.update(delta);
+        particles.update(delta, camera);
+        decorations.update(delta);
+        water.update(delta);
+        effects.update(delta);
+        plankton.update(delta);
+        updateCameraPosition(delta);
       }
 
       debugUI.update();
       hud.update();
-    }
-    animate();
+
+      renderer.render(scene, camera);
+    };
+
+    animate(); // Start the loop
   })
   .catch((err) => console.error("Failed to join room:", err));

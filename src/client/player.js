@@ -2,11 +2,12 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 export default class Player {
-  constructor(room, sessionId) {
+  constructor(room, sessionId, scene) {
     this.room = room;
     this.sessionId = sessionId;
+    this.scene = scene;
     this.stats = {};
-    this.tier = 0; // Will update to 1 for Clownfish later
+    this.tier = 1;
     this.attachedTo = null;
     this.object = null;
     this.currentModel = null;
@@ -23,36 +24,68 @@ export default class Player {
     this.controls = null;
     this.plankton = null;
     this.stateReady = false;
-    this.loadFishData().then(() => this.init());
+    this.isLoaded = false;
+    this.cumulativeXp = 0; // Track total XP earned
+    this.modelCache = {}; // Cache for preloaded models
+    console.log("Player constructor called, starting fishData load");
+    this.loadFishData();
   }
 
   async loadFishData() {
     try {
-      const response = await fetch("/public/fishData.json"); // Updated path
+      const response = await fetch("/fishData.json");
       if (!response.ok) {
         throw new Error(`HTTP error! Status: ${response.status}`);
       }
       this.fishData = await response.json();
-      console.log("Successfully loaded fishData:", this.fishData);
+      console.log(
+        "Successfully loaded fishData:",
+        this.fishData.fishTiers[1].defaultFish
+      );
     } catch (error) {
       console.error("Failed to load fishData.json:", error);
       this.fishData = null;
     }
   }
 
-  init(seabed, decorations, controls, plankton) {
+  async init(seabed, decorations, controls, plankton) {
     this.seabed = seabed;
     this.decorations = decorations;
-    this.controls = controls; // Set controls here
+    this.controls = controls;
     this.plankton = plankton;
-    this.loadModel();
+    console.log("Player.init called");
+
+    const maxWait = 5000;
+    let waited = 0;
+    while (!this.fishData && waited < maxWait) {
+      console.log("Waiting for fishData to load...");
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      waited += 100;
+    }
+
+    if (!this.fishData) {
+      console.error("fishData failed to load after timeout, cannot proceed");
+      return;
+    }
+
+    await this.loadModel();
+
+    this.room.onStateChange.once((state) => {
+      const newTier = state.players[this.sessionId]?.tier || 1;
+      if (newTier !== this.tier) {
+        this.tier = newTier;
+        console.log(`Server state received, tier updated to ${this.tier}`);
+        this.loadModel();
+      } else {
+        console.log(`Server state received, tier already ${this.tier}`);
+      }
+      this.stateReady = true;
+    });
   }
 
-  loadModel() {
+  async loadModel() {
     if (!this.fishData) {
-      console.error(
-        "fishData failed to load, cannot load model. Check if /public/fishData.json is accessible."
-      );
+      console.error("fishData not loaded, cannot load model");
       return;
     }
 
@@ -66,194 +99,205 @@ export default class Player {
 
     const fish = tierData.defaultFish;
     this.hitboxSize = fish.stats.hitboxSize;
+    this.baseScale = fish.stats.baseScale;
+    this.maxScale = fish.stats.maxScale;
     const modelPath = `/models/${fish.model}`;
-    console.log("Attempting to load model from:", modelPath);
+    console.log(`Attempting to load model for tier ${this.tier}: ${modelPath}`);
+
+    const loader = new GLTFLoader();
+    try {
+      const previousPosition = this.object
+        ? this.object.position.clone()
+        : new THREE.Vector3(0, 0, 0);
+      if (this.object) {
+        this.scene.remove(this.object);
+        if (this.bodyHitbox) this.object.remove(this.bodyHitbox);
+        if (this.biteHitbox) this.object.remove(this.biteHitbox);
+      }
+
+      let gltf;
+      if (this.modelCache[this.tier]) {
+        gltf = this.modelCache[this.tier]; // Use cached model
+        console.log(`Using cached model for tier ${this.tier}`);
+      } else {
+        gltf = await new Promise((resolve, reject) => {
+          loader.load(modelPath, resolve, undefined, reject);
+        });
+        this.modelCache[this.tier] = gltf; // Cache it
+        console.log(`Model loaded and cached for ${fish.name}`);
+      }
+
+      this.currentModel = gltf.scene;
+      this.object = this.currentModel;
+      this.object.scale.set(this.baseScale, this.baseScale, this.baseScale);
+      this.object.position.copy(previousPosition);
+      this.object.rotation.set(0, Math.PI, 0);
+
+      this.mixer = new THREE.AnimationMixer(this.object);
+      this.animations = {}; // Clear previous animations
+      gltf.animations.forEach((clip) => {
+        this.animations[clip.name] = this.mixer.clipAction(clip);
+      });
+
+      console.log("Available animations:", Object.keys(this.animations));
+      const defaultAnimName = fish.animations.default;
+      const swimAnimName = fish.animations.swim;
+
+      if (this.animations[defaultAnimName]) {
+        this.defaultAction = this.animations[defaultAnimName];
+        this.defaultAction.setLoop(THREE.LoopRepeat);
+      }
+      if (this.animations[swimAnimName]) {
+        this.swimAction = this.animations[swimAnimName];
+        this.swimAction.setLoop(THREE.LoopRepeat);
+        this.swimAction.play();
+        console.log(`Playing swim animation: ${swimAnimName}`);
+      } else if (this.defaultAction) {
+        console.warn(
+          `Swim animation ${swimAnimName} not found, falling back to default`
+        );
+        this.defaultAction.play();
+      }
+
+      this.object.traverse((child) => {
+        if (child.isMesh) {
+          const originalMaterial = child.material;
+          child.material = new THREE.MeshBasicMaterial({
+            map: originalMaterial.map || null,
+            color: originalMaterial.color || 0xffffff,
+          });
+        }
+      });
+
+      this.bodyHitbox = new THREE.Mesh(
+        new THREE.BoxGeometry(
+          this.hitboxSize,
+          this.hitboxSize,
+          this.hitboxSize
+        ),
+        new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true })
+      );
+      this.object.add(this.bodyHitbox);
+
+      this.biteHitbox = new THREE.Mesh(
+        new THREE.BoxGeometry(
+          this.hitboxSize,
+          this.hitboxSize,
+          this.hitboxSize * 0.2
+        ),
+        new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true })
+      );
+      this.biteHitbox.position.set(0, 0, this.hitboxSize / 2);
+      this.object.add(this.biteHitbox);
+
+      this.scene.add(this.object);
+      this.isLoaded = true;
+
+      console.log("Player model fully loaded and added to scene");
+
+      // Preload next tier if available
+      if (this.tier < this.fishData.fishTiers.length - 1) {
+        this.preloadNextTier();
+      }
+    } catch (error) {
+      console.error(`Failed to load model ${modelPath}:`, error);
+      if (!this.object) {
+        this.object = new THREE.Mesh(
+          new THREE.BoxGeometry(1, 1, 1),
+          new THREE.MeshBasicMaterial({ color: 0xff0000 })
+        );
+        this.scene.add(this.object);
+        this.isLoaded = true;
+        console.log("Fallback cube added due to model load failure");
+      }
+    }
+  }
+
+  async preloadNextTier() {
+    const nextTier = this.tier + 1;
+    if (
+      nextTier >= this.fishData.fishTiers.length ||
+      this.modelCache[nextTier]
+    ) {
+      return; // No next tier or already cached
+    }
+
+    const nextTierData = this.fishData.fishTiers.find(
+      (tier) => tier.tier === nextTier
+    );
+    const nextFish = nextTierData.defaultFish;
+    const nextModelPath = `/models/${nextFish.model}`;
+    console.log(`Preloading model for tier ${nextTier}: ${nextModelPath}`);
 
     const loader = new GLTFLoader();
     loader.load(
-      modelPath,
+      nextModelPath,
       (gltf) => {
-        if (this.object) {
-          this.object.remove(this.bodyHitbox);
-          this.object.remove(this.biteHitbox);
-        }
-
-        this.currentModel = gltf.scene;
-        this.object = this.currentModel;
-        this.object.scale.set(
-          fish.stats.baseScale,
-          fish.stats.baseScale,
-          fish.stats.baseScale
-        );
-        this.object.position.set(0, 0, 0);
-        this.object.rotation.set(0, Math.PI, 0);
-
-        this.mixer = new THREE.AnimationMixer(this.object);
-        gltf.animations.forEach((clip) => {
-          const clipName = clip.name;
-          this.animations[clipName] = this.mixer.clipAction(clip);
-          console.log(`Loaded animation: ${clipName}`);
-        });
-
-        const swimAnimNameBase = `${fish.name}_Swim`;
-        let swimAnimName = null;
-        const defaultAnimName = `${fish.name}_Default`;
-
-        // Find the swim animation (strip the frame part)
-        for (const animName of Object.keys(this.animations)) {
-          if (animName.startsWith(swimAnimNameBase)) {
-            swimAnimName = animName;
-            break;
-          }
-        }
-
-        // Set default animation as fallback
-        if (this.animations[defaultAnimName]) {
-          this.defaultAction = this.animations[defaultAnimName];
-          this.defaultAction.setLoop(THREE.LoopRepeat);
-          console.log(`Loaded default animation: ${defaultAnimName}`);
-        } else {
-          console.warn(
-            `Default animation ${defaultAnimName} not found. Available animations:`,
-            Object.keys(this.animations)
-          );
-        }
-
-        // Set swim animation to loop
-        if (swimAnimName && this.animations[swimAnimName]) {
-          this.swimAction = this.animations[swimAnimName];
-          this.swimAction.setLoop(THREE.LoopRepeat);
-          this.swimAction.play();
-          console.log(`Started looping swim animation: ${swimAnimName}`);
-        } else {
-          console.warn(
-            `Swim animation ${swimAnimNameBase} not found. Falling back to default.`
-          );
-          if (this.defaultAction) {
-            this.defaultAction.play();
-            console.log(
-              `Started looping default animation: ${defaultAnimName}`
-            );
-          }
-        }
-
-        this.object.traverse((child) => {
-          if (child.isMesh) {
-            const originalMaterial = child.material;
-            const map = originalMaterial.map || null;
-            child.material = new THREE.MeshBasicMaterial({
-              map: map,
-              color: originalMaterial.color || 0xffffff,
-              vertexColors: originalMaterial.vertexColors || false,
-            });
-          }
-        });
-
-        this.bodyHitbox = new THREE.Mesh(
-          new THREE.BoxGeometry(
-            this.hitboxSize,
-            this.hitboxSize,
-            this.hitboxSize
-          ),
-          new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true })
-        );
-        this.bodyHitbox.position.set(0, 0, 0);
-        this.object.add(this.bodyHitbox);
-
-        // Extend bite hitbox to match body hitbox height and width
-        const biteWidth = this.hitboxSize;
-        const biteHeight = this.hitboxSize; // Same height as body hitbox
-        const biteDepth = this.hitboxSize * 0.2; // Small depth (layer in front)
-        this.biteHitbox = new THREE.Mesh(
-          new THREE.BoxGeometry(biteWidth, biteHeight, biteDepth),
-          new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true })
-        );
-        this.biteHitbox.position.set(0, 0, this.hitboxSize / 2 + biteDepth / 2); // Position at the front
-        this.object.add(this.biteHitbox);
-
-        console.log(
-          `Successfully loaded ${fish.name} model for tier ${this.tier}`
-        );
+        this.modelCache[nextTier] = gltf;
+        console.log(`Preloaded model for tier ${nextTier}`);
       },
-      (progress) => {
-        console.log(
-          "Loading model:",
-          (progress.loaded / progress.total) * 100 + "%"
-        );
-      },
-      (error) => {
-        console.error(`Error loading model ${modelPath}:`, error);
-      }
+      undefined,
+      (error) => console.error(`Failed to preload ${nextModelPath}:`, error)
     );
   }
 
-  playAnimation(name) {
-    if (!this.mixer) {
-      console.warn("Mixer not initialized, skipping animation");
-      return;
-    }
-
-    const currentFish = this.fishData.fishTiers.find(
-      (tier) => tier.tier === this.tier
-    ).defaultFish;
-    const defaultAnimName = `${currentFish.name}_Default`;
-    const eatAnimName = `${currentFish.name}_Eat`;
-
-    // Stop the swim or default animation if playing
-    if (this.swimAction && this.swimAction.isRunning()) {
-      this.swimAction.stop();
-    } else if (this.defaultAction && this.defaultAction.isRunning()) {
-      this.defaultAction.stop();
-    }
-
-    // Play the requested animation if it exists
-    if (name === "eat" && this.animations[eatAnimName]) {
-      this.animations[eatAnimName].setLoop(THREE.LoopOnce, 1);
-      this.animations[eatAnimName].play();
-      console.log(
-        `Playing animation: ${eatAnimName}, will resume swim/default after`
-      );
-
-      this.animations[eatAnimName].clampWhenFinished = true;
-      this.animations[eatAnimName].addEventListener("finished", () => {
-        if (this.swimAction) {
-          this.swimAction.play();
-          console.log(`Resumed looping swim animation`);
-        } else if (this.defaultAction) {
-          this.defaultAction.play();
-          console.log(`Resumed looping default animation: ${defaultAnimName}`);
-        }
-      });
-    } else if (this.animations[name]) {
-      this.animations[name].play();
-      console.log(`Playing animation: ${name}`);
-    } else {
-      console.warn(
-        `Animation ${name} not found. Resuming swim/default. Available animations:`,
-        Object.keys(this.animations)
-      );
-      if (this.swimAction) {
-        this.swimAction.play();
-        console.log(`Resumed looping swim animation`);
-      } else if (this.defaultAction) {
-        this.defaultAction.play();
-        console.log(`Resumed looping default animation: ${defaultAnimName}`);
-      }
-    }
-  }
-
   update(delta, options = {}) {
-    const { isAttacking = false } = options; // Default to false if not provided
-
-    if (!this.object) {
-      console.warn("Player object not loaded, skipping update");
+    if (!this.isLoaded) return;
+    if (this.stats.hp <= 0) {
+      this.die();
       return;
     }
 
+    const { isAttacking = false } = options;
     if (this.mixer) {
       this.mixer.update(delta);
-      console.log("Mixer updated with delta:", delta);
     }
+
+    const tierData = this.fishData.fishTiers.find(
+      (tier) => tier.tier === this.tier
+    );
+    const fish = tierData.defaultFish;
+    const xpThreshold = fish.stats.xpThreshold;
+    let currentScale = this.baseScale;
+    if (xpThreshold && this.stats.xp !== undefined) {
+      const xpProgress = Math.min(this.stats.xp / xpThreshold, 1);
+      currentScale =
+        this.baseScale + (this.maxScale - this.baseScale) * xpProgress;
+      this.object.scale.set(currentScale, currentScale, currentScale);
+
+      if (
+        this.stats.xp >= xpThreshold &&
+        this.tier < this.fishData.fishTiers.length - 1
+      ) {
+        const evolutionPosition = this.object.position.clone();
+        this.cumulativeXp += this.stats.xp;
+        this.stats.xp = 0;
+        this.tier += 1;
+        this.room.send("evolve", { tier: this.tier });
+        console.log(
+          `Evolving to tier ${this.tier}, Cumulative XP: ${this.cumulativeXp}`
+        );
+        this.loadModel().then(() => {
+          this.object.position.copy(evolutionPosition);
+          console.log("Post-evolution position:", this.object.position);
+        });
+      }
+    }
+
+    const scaledHitboxSize = this.hitboxSize * (currentScale / this.baseScale);
+    this.bodyHitbox.scale.set(1, 1, 1);
+    this.bodyHitbox.geometry = new THREE.BoxGeometry(
+      scaledHitboxSize,
+      scaledHitboxSize,
+      scaledHitboxSize
+    );
+    this.biteHitbox.scale.set(1, 1, 1);
+    this.biteHitbox.geometry = new THREE.BoxGeometry(
+      scaledHitboxSize,
+      scaledHitboxSize,
+      scaledHitboxSize * 0.2
+    );
+    this.biteHitbox.position.set(0, 0, scaledHitboxSize / 2);
 
     if (!this.attachedTo) {
       const seabedHeight = this.seabed
@@ -262,31 +306,44 @@ export default class Player {
             this.object.position.z
           )
         : -5;
-      const playerBottom = this.object.position.y - this.hitboxSize / 2;
+      const playerBottom = this.object.position.y - scaledHitboxSize / 2;
       if (playerBottom < seabedHeight) {
-        this.object.position.y = seabedHeight + this.hitboxSize / 2;
+        this.object.position.y = seabedHeight + scaledHitboxSize / 2;
       }
 
       if (this.decorations) {
-        this.decorations.objects.forEach((decoration) => {
-          const decorationBox = new THREE.Box3().setFromObject(decoration);
+        this.decorations.rocks.forEach((rock) => {
+          const decorationBox = new THREE.Box3().setFromObject(rock);
           const playerBox = new THREE.Box3().setFromObject(this.bodyHitbox);
           if (playerBox.intersectsBox(decorationBox)) {
             const pushBack = new THREE.Vector3()
-              .subVectors(this.object.position, decoration.position)
+              .subVectors(this.object.position, rock.position)
               .normalize()
-              .multiplyScalar(this.hitboxSize * 0.1);
+              .multiplyScalar(scaledHitboxSize * 0.1);
             this.object.position.add(pushBack);
           }
         });
+
+        this.decorations.bunches.forEach((bunch) => {
+          bunch.children.forEach((coral) => {
+            const decorationBox = new THREE.Box3().setFromObject(coral);
+            const playerBox = new THREE.Box3().setFromObject(this.bodyHitbox);
+            if (playerBox.intersectsBox(decorationBox)) {
+              const pushBack = new THREE.Vector3()
+                .subVectors(
+                  this.object.position,
+                  coral.getWorldPosition(new THREE.Vector3())
+                )
+                .normalize()
+                .multiplyScalar(scaledHitboxSize * 0.1);
+              this.object.position.add(pushBack);
+            }
+          });
+        });
       }
 
-      if (this.mixer) {
-        if (isAttacking) {
-          // Use the passed isAttacking
-          this.playAnimation("eat");
-        }
-        // Swim animation already loops, no need to call unless interrupted
+      if (this.mixer && isAttacking) {
+        this.playAnimation("eat");
       }
 
       const biteBox = new THREE.Box3().setFromObject(this.biteHitbox);
@@ -320,7 +377,67 @@ export default class Player {
     });
   }
 
+  die() {
+    if (!this.fishData || !this.object) return;
+
+    const deathChunksData = this.fishData.plankton.deathChunks;
+    const numChunks = Math.ceil(
+      this.cumulativeXp / deathChunksData.xpMaxPerChunk
+    );
+    const sizeRange = deathChunksData.sizeRange || [0.1, 0.5];
+    const spawnRadius = 1 / deathChunksData.density;
+
+    let remainingXp = this.cumulativeXp;
+    for (let i = 0; i < numChunks && remainingXp > 0; i++) {
+      const xp = Math.min(
+        deathChunksData.xpMaxPerChunk,
+        remainingXp * (Math.random() * 0.5 + 0.5)
+      );
+      remainingXp -= xp;
+
+      const sizeFactor = xp / deathChunksData.xpMaxPerChunk;
+      const chunkSize =
+        sizeRange[0] + (sizeRange[1] - sizeRange[0]) * sizeFactor;
+
+      const geometry = new THREE.DodecahedronGeometry(chunkSize, 0);
+      const material = new THREE.MeshPhongMaterial({
+        color: new THREE.Color(`hsl(${Math.random() * 30}, 100%, 50%)`),
+        emissive: 0xff4500,
+        shininess: 100,
+        specular: 0xffffff,
+      });
+      const chunk = new THREE.Mesh(geometry, material);
+      chunk.position
+        .copy(this.object.position)
+        .add(
+          new THREE.Vector3(
+            (Math.random() - 0.5) * spawnRadius,
+            (Math.random() - 0.5) * spawnRadius,
+            (Math.random() - 0.5) * spawnRadius
+          )
+        );
+      chunk.userData = { hp: 1, xp: xp, size: chunkSize };
+      this.scene.add(chunk);
+
+      if (this.plankton) {
+        this.plankton.plankton.push(chunk);
+      }
+    }
+
+    this.scene.remove(this.object);
+    this.object = null;
+    this.isLoaded = false;
+    console.log(
+      `Player died, spawned ${numChunks} XP chunks with total ${this.cumulativeXp} XP`
+    );
+  }
+
   checkCollision(biteBox, delta) {
+    if (!this.biteHitbox) {
+      console.warn("Bite hitbox not available, skipping collision check");
+      return;
+    }
+
     if (this.plankton && this.plankton.plankton) {
       this.plankton.plankton.forEach((plankton) => {
         const planktonBox = new THREE.Box3().setFromObject(plankton);
@@ -349,7 +466,7 @@ export default class Player {
     }
 
     if (this.room.state && this.room.state.players) {
-      Object.values(this.room.state.players).forEach((otherPlayer) => {
+      Object.values(this.state.players).forEach((otherPlayer) => {
         if (
           otherPlayer.sessionId !== this.sessionId &&
           otherPlayer.biteHitbox
@@ -368,7 +485,15 @@ export default class Player {
     }
   }
 
-  addToScene(scene) {
-    scene.add(this.object);
+  playAnimation(animationName) {
+    if (this.mixer && this.animations[animationName]) {
+      this.swimAction?.stop();
+      this.defaultAction?.stop();
+      const action = this.animations[animationName];
+      action.reset().play();
+      console.log(`Playing animation: ${animationName}`);
+    } else {
+      console.warn(`Animation ${animationName} not available`);
+    }
   }
 }

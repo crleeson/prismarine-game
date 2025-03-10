@@ -50,10 +50,14 @@ class GameRoom extends Room {
     this.onMessage("evolve", (client, { tier }) => {
       const player = this.state.players[client.sessionId];
       if (player.tier !== 0) {
+        const currentPosition = { x: player.x, y: player.y, z: player.z };
         player.tier = tier;
         player.stats = {
           ...fishData.fishTiers.find((t) => t.tier === tier).defaultFish.stats,
         };
+        player.x = currentPosition.x;
+        player.y = currentPosition.y;
+        player.z = currentPosition.z;
       }
     });
 
@@ -61,7 +65,7 @@ class GameRoom extends Room {
   }
 
   onJoin(client) {
-    const tier = Math.random() < 0.1 ? 0 : 1;
+    const tier = 1;
     const fish = fishData.fishTiers.find((t) => t.tier === tier).defaultFish;
     this.state.players[client.sessionId] = {
       id: client.sessionId,
