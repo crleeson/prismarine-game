@@ -28,6 +28,7 @@ Thumbs.db
 
 # Models
 public
+# public/models
 
 # Docs
 game_objectives.md

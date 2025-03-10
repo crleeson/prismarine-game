@@ -1,11 +1,12 @@
 import * as THREE from "three";
-
-const CHUNK_WIDTH = 100;
-const CHUNK_DEPTH = 100;
-const CHUNK_HEIGHT = 100; // Increased to 100
-const PARTICLE_DENSITY = 0.00046875; // 10% of 0.0046875
-const PARTICLE_SIZE = 0.2;
-const BASE_SPEED = 0.0075;
+import {
+  CHUNK_WIDTH,
+  CHUNK_DEPTH,
+  CHUNK_HEIGHT,
+  PARTICLE_DENSITY,
+  PARTICLE_SIZE,
+  BASE_PARTICLE_SPEED,
+} from "../shared/constants.js";
 
 export default class Particles {
   constructor() {
@@ -32,16 +33,14 @@ export default class Particles {
         (Math.random() - 0.5) * 0.5
       )
         .normalize()
-        .multiplyScalar(BASE_SPEED * Math.random());
-      particle.userData.fadeRate = 0.8 / (10000 + Math.random() * 5000);
-      this.particles.push(particle);
+        .multiplyScalar(BASE_PARTICLE_SPEED * Math.random());
     }
   }
 
   resetParticle(particle) {
     particle.position.set(
       (Math.random() - 0.5) * CHUNK_WIDTH,
-      Math.random() * CHUNK_HEIGHT - 50, // Adjusted for new height
+      Math.random() * CHUNK_HEIGHT - CHUNK_HEIGHT / 2, // Adjusted for centering
       (Math.random() - 0.5) * CHUNK_DEPTH
     );
     particle.material.opacity = 0.8;

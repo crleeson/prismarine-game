@@ -1,11 +1,13 @@
 import * as THREE from "three";
 import { createNoise2D } from "simplex-noise";
+import {
+  CHUNK_WIDTH,
+  CHUNK_DEPTH,
+  SEABED_SEGMENTS,
+  SEABED_BASE_HEIGHT,
+} from "../shared/constants.js";
 
 const noise2D = createNoise2D();
-
-const CHUNK_WIDTH = 100;
-const CHUNK_DEPTH = 100;
-const SEGMENTS = 32;
 
 export default class Seabed {
   constructor() {
@@ -16,8 +18,8 @@ export default class Seabed {
     const geometry = new THREE.PlaneGeometry(
       CHUNK_WIDTH,
       CHUNK_DEPTH,
-      SEGMENTS,
-      SEGMENTS
+      SEABED_SEGMENTS,
+      SEABED_SEGMENTS
     );
 
     const vertices = geometry.attributes.position.array;
@@ -48,8 +50,7 @@ export default class Seabed {
 
     const mesh = new THREE.Mesh(geometry, material);
     mesh.rotation.x = -Math.PI / 2;
-    mesh.position.set(0, -5, 0);
-
+    mesh.position.set(0, SEABED_BASE_HEIGHT, 0); // Replaced -5
     return mesh;
   }
 
@@ -58,10 +59,9 @@ export default class Seabed {
   }
 
   getHeightAt(x, z) {
-    // Add method for collision
     x = Math.max(-CHUNK_WIDTH / 2, Math.min(CHUNK_WIDTH / 2, x));
     z = Math.max(-CHUNK_DEPTH / 2, Math.min(CHUNK_DEPTH / 2, z));
-    const baseHeight = this.mesh.position.y; // -5
+    const baseHeight = SEABED_BASE_HEIGHT; // Replaced -5
     const heightVariation = noise2D(x * 0.02, z * 0.02) * 5;
     return baseHeight + heightVariation;
   }

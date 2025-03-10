@@ -1,4 +1,15 @@
 import * as THREE from "three";
+import {
+  CHUNK_WIDTH,
+  CHUNK_DEPTH,
+  CHUNK_HEIGHT,
+  CHUNK_MIN_X,
+  CHUNK_MAX_X,
+  CHUNK_MIN_Y,
+  CHUNK_MAX_Y,
+  CHUNK_MIN_Z,
+  CHUNK_MAX_Z,
+} from "../shared/constants.js";
 
 export default class Plankton {
   constructor(scene, player, seabed) {
@@ -35,9 +46,9 @@ export default class Plankton {
       return;
     }
 
-    const numPlankton = Math.floor(
-      window.innerWidth * window.innerHeight * this.density
-    );
+    // Note: numPlankton calculation could use chunk volume instead of screen size
+    const volume = CHUNK_WIDTH * CHUNK_DEPTH * CHUNK_HEIGHT;
+    const numPlankton = Math.floor(volume * this.density);
     for (let i = 0; i < numPlankton; i++) {
       const geometry = new THREE.DodecahedronGeometry(1, 0);
       const xp =
@@ -57,9 +68,9 @@ export default class Plankton {
       const plankton = new THREE.Mesh(geometry, material);
       plankton.scale.set(scale, scale, scale);
       plankton.position.set(
-        Math.random() * 100 - 50,
-        Math.random() * 90 + 10,
-        Math.random() * 100 - 50
+        (Math.random() - 0.5) * CHUNK_WIDTH, // Replaced Math.random() * 100 - 50
+        Math.random() * (CHUNK_MAX_Y - 10) + 10, // Replaced Math.random() * 90 + 10
+        (Math.random() - 0.5) * CHUNK_DEPTH // Replaced Math.random() * 100 - 50
       );
       plankton.userData = { hp: 1, xp: xp, size: scale };
       plankton.rotationSpeed = Math.random() * 0.1;
@@ -107,9 +118,18 @@ export default class Plankton {
         }
 
         // Chunk boundaries (100x100x100, centered at origin: -50 to 50 for x/z, 0 to 100 for y)
-        newPosition.x = Math.max(-50, Math.min(50, newPosition.x));
-        newPosition.y = Math.max(0, Math.min(100, newPosition.y));
-        newPosition.z = Math.max(-50, Math.min(50, newPosition.z));
+        newPosition.x = Math.max(
+          CHUNK_MIN_X,
+          Math.min(CHUNK_MAX_X, newPosition.x)
+        ); // Replaced -50, 50
+        newPosition.y = Math.max(
+          CHUNK_MIN_Y,
+          Math.min(CHUNK_MAX_Y, newPosition.y)
+        ); // Replaced 0, 100
+        newPosition.z = Math.max(
+          CHUNK_MIN_Z,
+          Math.min(CHUNK_MAX_Z, newPosition.z)
+        ); // Replaced -50, 50
 
         plankton.position.copy(newPosition);
 

@@ -1,3 +1,4 @@
+// src/server/server.js
 import { Server } from "colyseus";
 import { WebSocketTransport } from "@colyseus/ws-transport";
 import { GameRoom } from "./gameRoom.js";
@@ -5,9 +6,8 @@ import { GameRoom } from "./gameRoom.js";
 console.log("Server script started");
 
 const port = process.env.PORT || 2567;
-
 const server = new Server({
-  transport: new WebSocketTransport(), // No options here
+  transport: new WebSocketTransport(),
 });
 
 server.define("gameRoom", GameRoom);

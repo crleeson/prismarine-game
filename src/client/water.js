@@ -1,8 +1,5 @@
 import * as THREE from "three";
-
-const CHUNK_WIDTH = 100;
-const CHUNK_DEPTH = 100;
-const WATER_HEIGHT = 100; // Increased to 100
+import { CHUNK_WIDTH, CHUNK_DEPTH, WATER_HEIGHT } from "../shared/constants.js";
 
 export default class Water {
   constructor() {

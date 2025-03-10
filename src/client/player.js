@@ -1,5 +1,14 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import {
+  CHUNK_MIN_X,
+  CHUNK_MAX_X,
+  CHUNK_MIN_Y,
+  CHUNK_MAX_Y,
+  CHUNK_MIN_Z,
+  CHUNK_MAX_Z,
+  MAX_WAIT_TIME,
+} from "../shared/constants.js";
 
 export default class Player {
   constructor(room, sessionId, scene) {
@@ -55,7 +64,7 @@ export default class Player {
     this.plankton = plankton;
     console.log("Player.init called");
 
-    const maxWait = 5000;
+    const maxWait = MAX_WAIT_TIME; // Replaced 5000
     let waited = 0;
     while (!this.fishData && waited < maxWait) {
       console.log("Waiting for fishData to load...");
@@ -352,17 +361,17 @@ export default class Player {
       }
 
       this.object.position.x = Math.max(
-        -50,
-        Math.min(50, this.object.position.x)
-      );
+        CHUNK_MIN_X,
+        Math.min(CHUNK_MAX_X, this.object.position.x)
+      ); // Replaced -50, 50
       this.object.position.y = Math.max(
-        0,
-        Math.min(100, this.object.position.y)
-      );
+        CHUNK_MIN_Y,
+        Math.min(CHUNK_MAX_Y, this.object.position.y)
+      ); // Replaced 0, 100
       this.object.position.z = Math.max(
-        -50,
-        Math.min(50, this.object.position.z)
-      );
+        CHUNK_MIN_Z,
+        Math.min(CHUNK_MAX_Z, this.object.position.z)
+      ); // Replaced -50, 50
     }
 
     this.room.send("move", {

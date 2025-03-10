@@ -1,6 +1,12 @@
 import { Room } from "colyseus";
 import { readFileSync } from "fs";
 import { join } from "path";
+import {
+  CHUNK_WIDTH,
+  CHUNK_DEPTH,
+  CHUNK_HEIGHT,
+  MAX_CLIENTS,
+} from "../shared/constants.js";
 
 const fishData = JSON.parse(
   readFileSync(join(process.cwd(), "public", "fishData.json"), "utf8")
@@ -8,7 +14,7 @@ const fishData = JSON.parse(
 
 class GameRoom extends Room {
   onCreate(options) {
-    this.maxClients = 100;
+    this.maxClients = MAX_CLIENTS;
     this.setState({
       players: {},
       plankton: {},
@@ -70,9 +76,9 @@ class GameRoom extends Room {
     this.state.players[client.sessionId] = {
       id: client.sessionId,
       tier,
-      x: Math.random() * 100 - 50,
-      y: Math.random() * 100 - 50,
-      z: Math.random() * 100 - 50,
+      x: (Math.random() - 0.5) * CHUNK_WIDTH, // Replaced Math.random() * 100 - 50
+      y: Math.random() * CHUNK_HEIGHT, // Replaced Math.random() * 100 - 50 (adjusted)
+      z: (Math.random() - 0.5) * CHUNK_DEPTH, // Replaced Math.random() * 100 - 50
       stats: { ...fish.stats },
       attachedTo: null,
     };

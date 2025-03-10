@@ -1,19 +1,30 @@
 import * as THREE from "three";
+import {
+  DEFAULT_MAX_SPEED,
+  STRAFE_SPEED,
+  DASH_DURATION,
+  DASH_COOLDOWN,
+  POST_DASH_DECAY,
+  SPEED_ACCELERATION,
+  SPEED_DECELERATION,
+  SPEED_IDLE_DECELERATION,
+  MOUSE_SENSITIVITY,
+} from "../shared/constants.js";
 
 export default class Controls {
   constructor(player, scene) {
     this.player = player;
     this.scene = scene;
     this.speed = 0;
-    this.maxSpeed = 10; // Default, updated from fishData
-    this.strafeSpeed = 5;
+    this.maxSpeed = DEFAULT_MAX_SPEED; // Replaced 10
+    this.strafeSpeed = STRAFE_SPEED; // Replaced 5
     this.keys = { w: false, s: false, a: false, d: false, space: false };
     this.mouseDelta = new THREE.Vector2();
     this.isDashing = false;
     this.dashCooldown = 0;
     this.dashDuration = 0;
-    this.dashSpeed = 0; // Updated from fishData
-    this.postDashDecay = 0; // New: Tracks decay time after dash
+    this.dashSpeed = 0;
+    this.postDashDecay = 0;
     this.yaw = 0;
     this.pitch = 0;
     this.isAttacking = false;
@@ -78,11 +89,23 @@ export default class Controls {
     }
 
     if (this.keys.w) {
-      this.speed = Math.min(this.speed + delta * 5, this.maxSpeed);
+      this.speed = Math.min(
+        this.speed + delta * SPEED_ACCELERATION,
+        this.maxSpeed
+      ); // Replaced 5
     }
     if (this.keys.s) {
-      this.speed = Math.max(this.speed - delta * 10, 0);
+      this.speed = Math.max(this.speed - delta * SPEED_DECELERATION, 0); // Replaced 10
     }
+    if (
+      !this.keys.w &&
+      !this.keys.s &&
+      !this.isDashing &&
+      this.postDashDecay <= 0
+    ) {
+      this.speed = Math.max(this.speed - delta * SPEED_IDLE_DECELERATION, 0); // Replaced 5
+    }
+
     if (
       !this.keys.w &&
       !this.keys.s &&
@@ -94,11 +117,12 @@ export default class Controls {
 
     if (this.keys.space && !this.isDashing && this.dashCooldown <= 0) {
       this.isDashing = true;
-      this.dashDuration = 0.5;
-      this.dashCooldown = 2;
-      this.speed = this.dashSpeed; // Set to dashSpeed (e.g., 5 for Clownfish)
-      this.postDashDecay = 1; // 1-second decay post-dash
+      this.dashDuration = DASH_DURATION; // Replaced 0.5
+      this.dashCooldown = DASH_COOLDOWN; // Replaced 2
+      this.speed = this.dashSpeed;
+      this.postDashDecay = POST_DASH_DECAY; // Replaced 1
     }
+
     if (this.isDashing) {
       this.dashDuration -= delta;
       if (this.dashDuration <= 0) {
@@ -118,7 +142,7 @@ export default class Controls {
     }
     this.dashCooldown = Math.max(0, this.dashCooldown - delta);
 
-    const sensitivity = 0.001;
+    const sensitivity = MOUSE_SENSITIVITY;
     this.yaw -= this.mouseDelta.x * sensitivity;
     this.pitch += this.mouseDelta.y * sensitivity;
     this.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.pitch));

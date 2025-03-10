@@ -11,6 +11,7 @@ import DebugUI from "./ui/debug.js";
 import HUD from "./ui/hud.js";
 import Effects from "./ui/effects.js";
 import Plankton from "./plankton.js";
+import { BASE_CAMERA_DISTANCE } from "../shared/constants.js";
 
 const client = new Client("ws://localhost:2567");
 let player,
@@ -110,7 +111,7 @@ client
           player.object.quaternion
         );
         const scale = player.stats?.scale || 1.0;
-        const distance = (BASE_CAMERA_DISTANCE / scale) * player.hitboxSize;
+        const distance = (BASE_CAMERA_DISTANCE / scale) * player.hitboxSize; // Replaced 2.5
 
         const targetOffset = new THREE.Vector3(0, 0.5 * scale, -distance);
         const idealPosition = player.object.position
